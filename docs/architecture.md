@@ -12,12 +12,13 @@ heavy capabilities are optional plugins.
 - `dicomforge.dataset`: predictable dataset wrapper
 - `dicomforge.transfer_syntax`: transfer syntax classification
 - `dicomforge.codecs`: codec capability registry
+- `dicomforge.pixels`: frame metadata, pixel safety checks, and lightweight pixel helpers
 - `dicomforge.anonymize`: de-identification profiles and plans
 - `dicomforge.io`: optional backend-based file IO
 
 ## Optional packages planned
 
-- `dicomforge-pixels`: NumPy/Pillow pixel transforms
+- `dicomforge-pixels`: NumPy/Pillow pixel transforms and bulk array operations
 - `dicomforge-codecs-openjpeg`: JPEG 2000 codec bridge
 - `dicomforge-network`: async DIMSE services
 - `dicomforge-dicomweb`: QIDO-RS, WADO-RS, STOW-RS client/server helpers

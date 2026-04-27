@@ -29,6 +29,21 @@ class Tag:
     SOPClassUID: ClassVar["Tag"]
     Modality: ClassVar["Tag"]
     TransferSyntaxUID: ClassVar["Tag"]
+    SamplesPerPixel: ClassVar["Tag"]
+    PhotometricInterpretation: ClassVar["Tag"]
+    PlanarConfiguration: ClassVar["Tag"]
+    NumberOfFrames: ClassVar["Tag"]
+    Rows: ClassVar["Tag"]
+    Columns: ClassVar["Tag"]
+    BitsAllocated: ClassVar["Tag"]
+    BitsStored: ClassVar["Tag"]
+    HighBit: ClassVar["Tag"]
+    PixelRepresentation: ClassVar["Tag"]
+    WindowCenter: ClassVar["Tag"]
+    WindowWidth: ClassVar["Tag"]
+    RescaleIntercept: ClassVar["Tag"]
+    RescaleSlope: ClassVar["Tag"]
+    RescaleType: ClassVar["Tag"]
     PixelData: ClassVar["Tag"]
 
     def __post_init__(self) -> None:
@@ -94,4 +109,19 @@ Tag.SOPInstanceUID = _register_keyword("SOPInstanceUID", 0x0008, 0x0018)
 Tag.SOPClassUID = _register_keyword("SOPClassUID", 0x0008, 0x0016)
 Tag.Modality = _register_keyword("Modality", 0x0008, 0x0060)
 Tag.TransferSyntaxUID = _register_keyword("TransferSyntaxUID", 0x0002, 0x0010)
+Tag.SamplesPerPixel = _register_keyword("SamplesPerPixel", 0x0028, 0x0002)
+Tag.PhotometricInterpretation = _register_keyword("PhotometricInterpretation", 0x0028, 0x0004)
+Tag.PlanarConfiguration = _register_keyword("PlanarConfiguration", 0x0028, 0x0006)
+Tag.NumberOfFrames = _register_keyword("NumberOfFrames", 0x0028, 0x0008)
+Tag.Rows = _register_keyword("Rows", 0x0028, 0x0010)
+Tag.Columns = _register_keyword("Columns", 0x0028, 0x0011)
+Tag.BitsAllocated = _register_keyword("BitsAllocated", 0x0028, 0x0100)
+Tag.BitsStored = _register_keyword("BitsStored", 0x0028, 0x0101)
+Tag.HighBit = _register_keyword("HighBit", 0x0028, 0x0102)
+Tag.PixelRepresentation = _register_keyword("PixelRepresentation", 0x0028, 0x0103)
+Tag.WindowCenter = _register_keyword("WindowCenter", 0x0028, 0x1050)
+Tag.WindowWidth = _register_keyword("WindowWidth", 0x0028, 0x1051)
+Tag.RescaleIntercept = _register_keyword("RescaleIntercept", 0x0028, 0x1052)
+Tag.RescaleSlope = _register_keyword("RescaleSlope", 0x0028, 0x1053)
+Tag.RescaleType = _register_keyword("RescaleType", 0x0028, 0x1054)
 Tag.PixelData = _register_keyword("PixelData", 0x7FE0, 0x0010)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Iterable, Mapping
+from typing import Dict, Iterable, Mapping, Optional
 
 from dicomforge.dataset import DicomDataset
 from dicomforge.tags import Tag, TagInput
@@ -30,7 +30,10 @@ class AnonymizationPlan:
         self._rules = list(rules)
 
     @classmethod
-    def basic_profile(cls, replacements: Mapping[TagInput, object] | None = None) -> "AnonymizationPlan":
+    def basic_profile(
+        cls,
+        replacements: Optional[Mapping[TagInput, object]] = None,
+    ) -> "AnonymizationPlan":
         replacement_map: Dict[Tag, object] = {
             Tag.parse(tag): value for tag, value in (replacements or {}).items()
         }

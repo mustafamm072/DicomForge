@@ -11,6 +11,8 @@ This repository is intentionally starting with a small, solid core:
 - transfer syntax classification
 - pluggable codec registry
 - de-identification planning
+- pixel metadata and safety checks
+- VOI window, rescale, and photometric interpretation helpers
 - optional `pydicom` IO backend
 - standard-library tests
 
@@ -67,5 +69,5 @@ print(dataset.get("PatientName"))
 Run the standard-library test suite:
 
 ```bash
-python3 -m unittest
+PYTHONPATH=src python3 -m unittest
 ```

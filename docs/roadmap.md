@@ -11,6 +11,8 @@
 
 ## 0.2 Pixel Safety
 
+Status: implemented in `dicomforge.pixels` with standard-library tests.
+
 - frame metadata model
 - pixel capability checks
 - VOI LUT, rescale, photometric interpretation helpers
@@ -46,4 +48,3 @@
 - compatibility matrix
 - examples for PACS, AI pipelines, and web viewers
 - governance and maintainer guide
-

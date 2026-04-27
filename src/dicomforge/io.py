@@ -11,6 +11,11 @@ from dicomforge.errors import MissingBackendError
 PathLike = Union[str, Path]
 
 
+def _copy_pydicom_elements(source: Any, dataset: DicomDataset) -> None:
+    for element in source:
+        dataset.set((element.tag.group, element.tag.element), element.value)
+
+
 def read(path: PathLike, *, stop_before_pixels: bool = False, force: bool = False) -> DicomDataset:
     """Read a DICOM file through the optional pydicom backend."""
 
@@ -24,8 +29,10 @@ def read(path: PathLike, *, stop_before_pixels: bool = False, force: bool = Fals
 
     raw = pydicom.dcmread(str(path), stop_before_pixels=stop_before_pixels, force=force)
     dataset = DicomDataset()
-    for element in raw:
-        dataset.set((element.tag.group, element.tag.element), element.value)
+    file_meta = getattr(raw, "file_meta", None)
+    if file_meta is not None:
+        _copy_pydicom_elements(file_meta, dataset)
+    _copy_pydicom_elements(raw, dataset)
     return dataset
 
 
