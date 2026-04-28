@@ -1,6 +1,14 @@
 """Lightweight DICOM processing primitives."""
 
-from dicomforge.anonymize import AnonymizationAction, AnonymizationPlan
+from dicomforge.anonymize import (
+    AnonymizationAction,
+    AnonymizationPlan,
+    AuditEvent,
+    AuditReport,
+    PrivateTagAction,
+    Rule,
+    UidRemapper,
+)
 from dicomforge.codecs import Codec, CodecRegistry
 from dicomforge.dataset import DicomDataset
 from dicomforge.errors import DicomForgeError, MissingBackendError, UnsupportedTransferSyntaxError
@@ -19,6 +27,8 @@ from dicomforge.transfer_syntax import TransferSyntax
 __all__ = [
     "AnonymizationAction",
     "AnonymizationPlan",
+    "AuditEvent",
+    "AuditReport",
     "Codec",
     "CodecRegistry",
     "DicomDataset",
@@ -27,6 +37,9 @@ __all__ = [
     "FrameMetadata",
     "PixelCapability",
     "PixelMetadataError",
+    "PrivateTagAction",
+    "Rule",
+    "UidRemapper",
     "VoiLut",
     "Tag",
     "TransferSyntax",

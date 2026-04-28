@@ -11,8 +11,8 @@
 ## Positioning
 
 DICOMForge is a lightweight, typed Python DICOM toolkit for building reliable
-medical imaging applications, PACS integrations, AI pipelines, DICOMweb services,
-and de-identification workflows.
+medical imaging applications, PACS integrations, AI pipelines, planned DICOMweb
+services, and de-identification workflows.
 
 ## Why This Name Works
 
@@ -25,11 +25,11 @@ and de-identification workflows.
 
 ## Suggested Repository Description
 
-Lightweight, typed Python DICOM toolkit for medical imaging apps, PACS, DICOMweb,
-AI pipelines, anonymization, transfer syntaxes, and pixel processing.
+Lightweight, typed Python DICOM toolkit for medical imaging apps, PACS,
+de-identification, transfer syntaxes, and pixel processing.
 
 ## Suggested Topics
 
 `dicom`, `medical-imaging`, `python`, `pacs`, `dicomweb`, `radiology`,
-`healthcare`, `pydicom`, `anonymization`, `pixel-data`, `ai-medical-imaging`
+`healthcare`, `pydicom`, `de-identification`, `pixel-data`, `ai-medical-imaging`
 

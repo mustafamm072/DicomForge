@@ -23,10 +23,34 @@ class Tag:
     PatientID: ClassVar["Tag"]
     PatientBirthDate: ClassVar["Tag"]
     PatientSex: ClassVar["Tag"]
+    PatientAddress: ClassVar["Tag"]
+    PatientTelephoneNumbers: ClassVar["Tag"]
+    OtherPatientIDs: ClassVar["Tag"]
+    PatientAge: ClassVar["Tag"]
+    AccessionNumber: ClassVar["Tag"]
+    StudyDate: ClassVar["Tag"]
+    SeriesDate: ClassVar["Tag"]
+    AcquisitionDate: ClassVar["Tag"]
+    ContentDate: ClassVar["Tag"]
+    StudyTime: ClassVar["Tag"]
+    SeriesTime: ClassVar["Tag"]
+    AcquisitionTime: ClassVar["Tag"]
+    ContentTime: ClassVar["Tag"]
+    InstitutionName: ClassVar["Tag"]
+    InstitutionAddress: ClassVar["Tag"]
+    ReferringPhysicianName: ClassVar["Tag"]
+    PerformingPhysicianName: ClassVar["Tag"]
+    OperatorsName: ClassVar["Tag"]
+    StationName: ClassVar["Tag"]
+    StudyID: ClassVar["Tag"]
     StudyInstanceUID: ClassVar["Tag"]
     SeriesInstanceUID: ClassVar["Tag"]
     SOPInstanceUID: ClassVar["Tag"]
     SOPClassUID: ClassVar["Tag"]
+    FrameOfReferenceUID: ClassVar["Tag"]
+    LongitudinalTemporalInformationModified: ClassVar["Tag"]
+    PatientIdentityRemoved: ClassVar["Tag"]
+    DeidentificationMethod: ClassVar["Tag"]
     Modality: ClassVar["Tag"]
     TransferSyntaxUID: ClassVar["Tag"]
     SamplesPerPixel: ClassVar["Tag"]
@@ -103,10 +127,36 @@ Tag.PatientName = _register_keyword("PatientName", 0x0010, 0x0010)
 Tag.PatientID = _register_keyword("PatientID", 0x0010, 0x0020)
 Tag.PatientBirthDate = _register_keyword("PatientBirthDate", 0x0010, 0x0030)
 Tag.PatientSex = _register_keyword("PatientSex", 0x0010, 0x0040)
+Tag.PatientAddress = _register_keyword("PatientAddress", 0x0010, 0x1040)
+Tag.PatientTelephoneNumbers = _register_keyword("PatientTelephoneNumbers", 0x0010, 0x2154)
+Tag.OtherPatientIDs = _register_keyword("OtherPatientIDs", 0x0010, 0x1000)
+Tag.PatientAge = _register_keyword("PatientAge", 0x0010, 0x1010)
+Tag.AccessionNumber = _register_keyword("AccessionNumber", 0x0008, 0x0050)
+Tag.StudyDate = _register_keyword("StudyDate", 0x0008, 0x0020)
+Tag.SeriesDate = _register_keyword("SeriesDate", 0x0008, 0x0021)
+Tag.AcquisitionDate = _register_keyword("AcquisitionDate", 0x0008, 0x0022)
+Tag.ContentDate = _register_keyword("ContentDate", 0x0008, 0x0023)
+Tag.StudyTime = _register_keyword("StudyTime", 0x0008, 0x0030)
+Tag.SeriesTime = _register_keyword("SeriesTime", 0x0008, 0x0031)
+Tag.AcquisitionTime = _register_keyword("AcquisitionTime", 0x0008, 0x0032)
+Tag.ContentTime = _register_keyword("ContentTime", 0x0008, 0x0033)
+Tag.InstitutionName = _register_keyword("InstitutionName", 0x0008, 0x0080)
+Tag.InstitutionAddress = _register_keyword("InstitutionAddress", 0x0008, 0x0081)
+Tag.ReferringPhysicianName = _register_keyword("ReferringPhysicianName", 0x0008, 0x0090)
+Tag.PerformingPhysicianName = _register_keyword("PerformingPhysicianName", 0x0008, 0x1050)
+Tag.OperatorsName = _register_keyword("OperatorsName", 0x0008, 0x1070)
+Tag.StationName = _register_keyword("StationName", 0x0008, 0x1010)
+Tag.StudyID = _register_keyword("StudyID", 0x0020, 0x0010)
 Tag.StudyInstanceUID = _register_keyword("StudyInstanceUID", 0x0020, 0x000D)
 Tag.SeriesInstanceUID = _register_keyword("SeriesInstanceUID", 0x0020, 0x000E)
 Tag.SOPInstanceUID = _register_keyword("SOPInstanceUID", 0x0008, 0x0018)
 Tag.SOPClassUID = _register_keyword("SOPClassUID", 0x0008, 0x0016)
+Tag.FrameOfReferenceUID = _register_keyword("FrameOfReferenceUID", 0x0020, 0x0052)
+Tag.LongitudinalTemporalInformationModified = _register_keyword(
+    "LongitudinalTemporalInformationModified", 0x0028, 0x0303
+)
+Tag.PatientIdentityRemoved = _register_keyword("PatientIdentityRemoved", 0x0012, 0x0062)
+Tag.DeidentificationMethod = _register_keyword("DeidentificationMethod", 0x0012, 0x0063)
 Tag.Modality = _register_keyword("Modality", 0x0008, 0x0060)
 Tag.TransferSyntaxUID = _register_keyword("TransferSyntaxUID", 0x0002, 0x0010)
 Tag.SamplesPerPixel = _register_keyword("SamplesPerPixel", 0x0028, 0x0002)
