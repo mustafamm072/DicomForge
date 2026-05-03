@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar, Dict
 
+from dicomforge.uids import TransferSyntaxUID
+
 
 @dataclass(frozen=True)
 class TransferSyntax:
@@ -51,59 +53,59 @@ class TransferSyntax:
 
 
 TransferSyntax.register(
-    "1.2.840.10008.1.2",
+    TransferSyntaxUID.ImplicitVRLittleEndian,
     "Implicit VR Little Endian",
     is_little_endian=True,
     is_explicit_vr=False,
 )
 TransferSyntax.register(
-    "1.2.840.10008.1.2.1",
+    TransferSyntaxUID.ExplicitVRLittleEndian,
     "Explicit VR Little Endian",
     is_little_endian=True,
     is_explicit_vr=True,
 )
 TransferSyntax.register(
-    "1.2.840.10008.1.2.1.99",
+    TransferSyntaxUID.DeflatedExplicitVRLittleEndian,
     "Deflated Explicit VR Little Endian",
     is_little_endian=True,
     is_explicit_vr=True,
 )
 TransferSyntax.register(
-    "1.2.840.10008.1.2.2",
+    TransferSyntaxUID.ExplicitVRBigEndian,
     "Explicit VR Big Endian",
     is_little_endian=False,
     is_explicit_vr=True,
 )
 TransferSyntax.register(
-    "1.2.840.10008.1.2.4.50",
+    TransferSyntaxUID.JPEGBaselineProcess1,
     "JPEG Baseline Process 1",
     is_little_endian=True,
     is_explicit_vr=True,
     is_encapsulated=True,
 )
 TransferSyntax.register(
-    "1.2.840.10008.1.2.4.70",
+    TransferSyntaxUID.JPEGLossless,
     "JPEG Lossless",
     is_little_endian=True,
     is_explicit_vr=True,
     is_encapsulated=True,
 )
 TransferSyntax.register(
-    "1.2.840.10008.1.2.4.80",
+    TransferSyntaxUID.JPEGLSLossless,
     "JPEG-LS Lossless",
     is_little_endian=True,
     is_explicit_vr=True,
     is_encapsulated=True,
 )
 TransferSyntax.register(
-    "1.2.840.10008.1.2.4.90",
+    TransferSyntaxUID.JPEG2000Lossless,
     "JPEG 2000 Lossless",
     is_little_endian=True,
     is_explicit_vr=True,
     is_encapsulated=True,
 )
 TransferSyntax.register(
-    "1.2.840.10008.1.2.5",
+    TransferSyntaxUID.RLELossless,
     "RLE Lossless",
     is_little_endian=True,
     is_explicit_vr=True,

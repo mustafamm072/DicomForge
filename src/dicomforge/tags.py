@@ -23,6 +23,14 @@ class Tag:
     PatientID: ClassVar["Tag"]
     PatientBirthDate: ClassVar["Tag"]
     PatientSex: ClassVar["Tag"]
+    AccessionNumber: ClassVar["Tag"]
+    StudyDate: ClassVar["Tag"]
+    SeriesDate: ClassVar["Tag"]
+    AcquisitionDate: ClassVar["Tag"]
+    ContentDate: ClassVar["Tag"]
+    ReferringPhysicianName: ClassVar["Tag"]
+    InstitutionName: ClassVar["Tag"]
+    PatientAddress: ClassVar["Tag"]
     StudyInstanceUID: ClassVar["Tag"]
     SeriesInstanceUID: ClassVar["Tag"]
     SOPInstanceUID: ClassVar["Tag"]
@@ -45,6 +53,9 @@ class Tag:
     RescaleSlope: ClassVar["Tag"]
     RescaleType: ClassVar["Tag"]
     PixelData: ClassVar["Tag"]
+    MediaStorageSOPClassUID: ClassVar["Tag"]
+    MediaStorageSOPInstanceUID: ClassVar["Tag"]
+    ImplementationClassUID: ClassVar["Tag"]
 
     def __post_init__(self) -> None:
         if not 0 <= self.group <= 0xFFFF or not 0 <= self.element <= 0xFFFF:
@@ -103,12 +114,23 @@ Tag.PatientName = _register_keyword("PatientName", 0x0010, 0x0010)
 Tag.PatientID = _register_keyword("PatientID", 0x0010, 0x0020)
 Tag.PatientBirthDate = _register_keyword("PatientBirthDate", 0x0010, 0x0030)
 Tag.PatientSex = _register_keyword("PatientSex", 0x0010, 0x0040)
+Tag.AccessionNumber = _register_keyword("AccessionNumber", 0x0008, 0x0050)
+Tag.StudyDate = _register_keyword("StudyDate", 0x0008, 0x0020)
+Tag.SeriesDate = _register_keyword("SeriesDate", 0x0008, 0x0021)
+Tag.AcquisitionDate = _register_keyword("AcquisitionDate", 0x0008, 0x0022)
+Tag.ContentDate = _register_keyword("ContentDate", 0x0008, 0x0023)
+Tag.ReferringPhysicianName = _register_keyword("ReferringPhysicianName", 0x0008, 0x0090)
+Tag.InstitutionName = _register_keyword("InstitutionName", 0x0008, 0x0080)
+Tag.PatientAddress = _register_keyword("PatientAddress", 0x0010, 0x1040)
 Tag.StudyInstanceUID = _register_keyword("StudyInstanceUID", 0x0020, 0x000D)
 Tag.SeriesInstanceUID = _register_keyword("SeriesInstanceUID", 0x0020, 0x000E)
 Tag.SOPInstanceUID = _register_keyword("SOPInstanceUID", 0x0008, 0x0018)
 Tag.SOPClassUID = _register_keyword("SOPClassUID", 0x0008, 0x0016)
 Tag.Modality = _register_keyword("Modality", 0x0008, 0x0060)
 Tag.TransferSyntaxUID = _register_keyword("TransferSyntaxUID", 0x0002, 0x0010)
+Tag.MediaStorageSOPClassUID = _register_keyword("MediaStorageSOPClassUID", 0x0002, 0x0002)
+Tag.MediaStorageSOPInstanceUID = _register_keyword("MediaStorageSOPInstanceUID", 0x0002, 0x0003)
+Tag.ImplementationClassUID = _register_keyword("ImplementationClassUID", 0x0002, 0x0012)
 Tag.SamplesPerPixel = _register_keyword("SamplesPerPixel", 0x0028, 0x0002)
 Tag.PhotometricInterpretation = _register_keyword("PhotometricInterpretation", 0x0028, 0x0004)
 Tag.PlanarConfiguration = _register_keyword("PlanarConfiguration", 0x0028, 0x0006)

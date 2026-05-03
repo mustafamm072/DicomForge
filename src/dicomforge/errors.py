@@ -13,5 +13,9 @@ class UnsupportedTransferSyntaxError(DicomForgeError):
     """Raised when no registered codec can handle a transfer syntax."""
 
 
+class DicomValidationError(DicomForgeError, ValueError):
+    """Raised when a dataset is not valid enough for the requested operation."""
+
+
 class InvalidTagError(DicomForgeError, ValueError):
     """Raised when a DICOM tag cannot be parsed."""

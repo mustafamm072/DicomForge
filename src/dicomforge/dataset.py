@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, MutableMapping
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 from dicomforge.tags import Tag, TagInput
 
@@ -29,11 +29,27 @@ class DicomDataset(MutableMapping[Tag, Any]):
             raise KeyError(f"Required DICOM tag {parsed} is missing")
         return self._values[parsed]
 
-    def remove_private_tags(self) -> int:
+    def iter_nested(self) -> Iterable[Tuple[Tuple[Tag, ...], Tag, Any]]:
+        """Yield all elements, including nested datasets in sequence-like values."""
+
+        yield from self._iter_nested(())
+
+    def _iter_nested(self, path: Tuple[Tag, ...]) -> Iterable[Tuple[Tuple[Tag, ...], Tag, Any]]:
+        for tag, value in self._values.items():
+            yield path, tag, value
+            for child in _iter_child_datasets(value):
+                yield from child._iter_nested(path + (tag,))
+
+    def remove_private_tags(self, *, recursive: bool = True) -> int:
         private_tags = [tag for tag in self._values if tag.is_private]
         for tag in private_tags:
             del self._values[tag]
-        return len(private_tags)
+        removed = len(private_tags)
+        if recursive:
+            for value in self._values.values():
+                for child in _iter_child_datasets(value):
+                    removed += child.remove_private_tags(recursive=True)
+        return removed
 
     def __getitem__(self, key: TagInput) -> Any:
         return self._values[Tag.parse(key)]
@@ -54,3 +70,13 @@ class DicomDataset(MutableMapping[Tag, Any]):
         """Return a serializable dictionary keyed by canonical tag strings."""
 
         return {str(tag): value for tag, value in sorted(self._values.items())}
+
+
+def _iter_child_datasets(value: Any) -> Iterable[DicomDataset]:
+    if isinstance(value, DicomDataset):
+        yield value
+        return
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, DicomDataset):
+                yield item

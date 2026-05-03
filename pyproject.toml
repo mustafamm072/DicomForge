@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dicomforge"
-version = "0.2.0"
+version = "0.4.0"
 description = "A lightweight, typed Python DICOM processing toolkit for medical imaging."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [{ name = "DICOMForge contributors" }]
 keywords = ["dicom", "medical-imaging", "pacs", "radiology", "healthcare"]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Intended Audience :: Healthcare Industry",
   "License :: OSI Approved :: MIT License",
@@ -30,11 +30,13 @@ dependencies = []
 pydicom = ["pydicom>=2.4"]
 pixels = ["numpy>=1.23", "pillow>=10"]
 dev = ["pydicom>=2.4", "pytest>=7", "ruff>=0.4", "mypy>=1.8"]
+all = ["pydicom>=2.4", "numpy>=1.23", "pillow>=10"]
 
 [project.urls]
-Homepage = "https://example.com/dicomforge"
-Documentation = "https://example.com/dicomforge/docs"
-Issues = "https://example.com/dicomforge/issues"
+Homepage = "https://github.com/dicomforge/dicomforge"
+Repository = "https://github.com/dicomforge/dicomforge"
+Documentation = "https://github.com/dicomforge/dicomforge/tree/main/docs"
+Issues = "https://github.com/dicomforge/dicomforge/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dicomforge"]

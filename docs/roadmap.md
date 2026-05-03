@@ -21,12 +21,18 @@ Status: implemented in `dicomforge.pixels` with standard-library tests.
 
 ## 0.3 De-identification
 
+Status: partially implemented in `dicomforge.anonymize`; full PS3.15 behavior remains planned.
+
 - DICOM PS3.15 Basic Application Confidentiality Profile mapping
 - deterministic UID remapping
 - audit report generation
 - configurable private tag handling
 
 ## 0.4 Networking
+
+Status: implemented in `dicomforge.network` as dependency-free command primitives
+with standard-library async tests; full DICOM Upper Layer wire compatibility
+remains planned for `dicomforge-network`.
 
 - async association lifecycle
 - C-ECHO, C-FIND, C-MOVE, C-STORE client

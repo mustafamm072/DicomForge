@@ -1,9 +1,9 @@
 # DICOMForge
 
-DICOMForge is an early Python DICOM processing library for medical imaging
-applications. The goal is a lightweight core with typed, predictable APIs and
-optional integrations for heavier work such as pixel codecs, networking, and
-DICOMweb.
+DICOMForge is a Python DICOM processing library for medical imaging
+applications. The goal is a lightweight core with typed, predictable APIs,
+explicit safety boundaries, and optional integrations for heavier work such as
+pixel codecs, wire-compatible networking, and DICOMweb.
 
 This repository is intentionally starting with a small, solid core:
 
@@ -13,6 +13,7 @@ This repository is intentionally starting with a small, solid core:
 - de-identification planning
 - pixel metadata and safety checks
 - VOI window, rescale, and photometric interpretation helpers
+- async networking primitives for association lifecycle and DIMSE-style commands
 - optional `pydicom` IO backend
 - standard-library tests
 
@@ -38,8 +39,18 @@ Design priorities:
   action where possible.
 
 See [docs/architecture.md](docs/architecture.md) and
-[docs/roadmap.md](docs/roadmap.md). For repository naming and discoverability
-notes, see [docs/branding.md](docs/branding.md).
+[docs/roadmap.md](docs/roadmap.md). Current implementation boundaries are
+tracked in [docs/conformance.md](docs/conformance.md). For repository naming
+and discoverability notes, see [docs/branding.md](docs/branding.md).
+
+## Commercial Readiness
+
+DICOMForge is MIT licensed and designed for commercial use as a developer
+library. It is not a medical device, diagnostic application, complete PS3.15
+de-identification engine, or wire-compatible DIMSE implementation. See
+[docs/safety.md](docs/safety.md), [docs/conformance.md](docs/conformance.md),
+and [docs/compatibility.md](docs/compatibility.md) before using it in regulated
+clinical workflows.
 
 ## Quick Start
 
@@ -64,6 +75,21 @@ dataset = read("image.dcm", stop_before_pixels=True)
 print(dataset.get("PatientName"))
 ```
 
+Async networking:
+
+```python
+from dicomforge.network import DimseServer, open_association
+
+async with DimseServer(ae_title="LOCAL-SCP") as server:
+    async with await open_association(
+        "127.0.0.1",
+        server.bound_port,
+        called_ae_title="LOCAL-SCP",
+    ) as association:
+        status = await association.c_echo()
+        assert status.is_success
+```
+
 ## Development
 
 Run the standard-library test suite:
@@ -71,3 +97,5 @@ Run the standard-library test suite:
 ```bash
 PYTHONPATH=src python3 -m unittest
 ```
+
+Examples live in [examples](examples).

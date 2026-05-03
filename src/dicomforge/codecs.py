@@ -7,6 +7,7 @@ from typing import Dict, Iterable, Optional
 
 from dicomforge.errors import UnsupportedTransferSyntaxError
 from dicomforge.transfer_syntax import TransferSyntax
+from dicomforge.uids import TransferSyntaxUID
 
 
 @dataclass(frozen=True)
@@ -63,9 +64,9 @@ def default_registry() -> CodecRegistry:
                 name="native-uncompressed",
                 transfer_syntax_uids=frozenset(
                     {
-                        "1.2.840.10008.1.2",
-                        "1.2.840.10008.1.2.1",
-                        "1.2.840.10008.1.2.2",
+                        TransferSyntaxUID.ImplicitVRLittleEndian,
+                        TransferSyntaxUID.ExplicitVRLittleEndian,
+                        TransferSyntaxUID.ExplicitVRBigEndian,
                     }
                 ),
                 can_decode=True,
