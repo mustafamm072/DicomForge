@@ -280,13 +280,17 @@ def assert_pixel_data_length(pixel_data: PixelBytes, metadata: FrameMetadata) ->
 
     actual = len(pixel_data)
     expected = metadata.expected_pixel_bytes
-    padded_expected = expected + 1 if expected % 2 == 1 else expected
+    needs_padding = expected % 2 == 1
+    padded_expected = expected + 1 if needs_padding else expected
     if actual not in {expected, padded_expected}:
         raise PixelMetadataError(
             "PixelData length mismatch: "
             f"expected {expected} bytes from frame metadata, got {actual}."
         )
-    if actual == padded_expected and pixel_data[-1:] != b"\x00":
+    # Only verify the padding byte when the pixel stream is genuinely odd-length.
+    # When expected is even, padded_expected == expected, so the check below would
+    # incorrectly fire on the last real data byte.
+    if needs_padding and actual == padded_expected and pixel_data[-1:] != b"\x00":
         raise PixelMetadataError("PixelData odd-length padding byte must be zero.")
 
 

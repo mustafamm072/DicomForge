@@ -163,6 +163,22 @@ class PixelCapabilityTests(unittest.TestCase):
         with self.assertRaisesRegex(PixelMetadataError, "padding byte"):
             assert_pixel_data_length(b"\x7f\x01", metadata)
 
+    def test_even_length_pixel_data_last_byte_not_checked(self):
+        # Regression: assert_pixel_data_length must NOT check the last byte's
+        # value when expected length is even — it is real pixel data, not padding.
+        metadata = FrameMetadata(
+            rows=2,
+            columns=2,
+            samples_per_pixel=1,
+            bits_allocated=8,
+            bits_stored=8,
+            high_bit=7,
+            pixel_representation=0,
+            photometric_interpretation="MONOCHROME2",
+        )
+        # 4 pixels, last byte is 0xFF — must not raise
+        assert_pixel_data_length(b"\x00\x01\x02\xff", metadata)
+
 
 class PixelHelperTests(unittest.TestCase):
     def test_rescale_helpers(self):
