@@ -41,6 +41,41 @@ _KNOWN_VR = {
     Tag.RescaleIntercept: "DS",
     Tag.RescaleSlope: "DS",
     Tag.RescaleType: "LO",
+    # Study / Series / Instance identification
+    Tag.StudyDescription: "LO",
+    Tag.SeriesDescription: "LO",
+    Tag.SeriesNumber: "IS",
+    Tag.InstanceNumber: "IS",
+    Tag.ImageType: "CS",
+    Tag.AcquisitionNumber: "IS",
+    Tag.AcquisitionDateTime: "DT",
+    Tag.ProtocolName: "LO",
+    Tag.RequestedProcedureDescription: "LO",
+    # Equipment
+    Tag.Manufacturer: "LO",
+    Tag.ManufacturerModelName: "LO",
+    Tag.DeviceSerialNumber: "LO",
+    Tag.SoftwareVersions: "LO",
+    Tag.InstitutionalDepartmentName: "LO",
+    # Patient clinical context
+    Tag.BodyPartExamined: "CS",
+    Tag.PatientPosition: "CS",
+    Tag.ViewPosition: "CS",
+    Tag.PatientWeight: "DS",
+    Tag.PatientSize: "DS",
+    Tag.AttendingPhysicianName: "PN",
+    Tag.RequestingPhysician: "PN",
+    Tag.BurnedInAnnotation: "CS",
+    # Image geometry
+    Tag.PixelSpacing: "DS",
+    Tag.SliceThickness: "DS",
+    Tag.SliceLocation: "DS",
+    Tag.SpacingBetweenSlices: "DS",
+    Tag.ImagePositionPatient: "DS",
+    Tag.ImageOrientationPatient: "DS",
+    # Pixel value range
+    Tag.SmallestImagePixelValue: "US",
+    Tag.LargestImagePixelValue: "US",
 }
 
 
@@ -150,4 +185,8 @@ def write(
         if ensure_file_meta and tag.group == 0x0002:
             continue
         raw.add_new((tag.group, tag.element), _vr_for_tag(tag, dataset), value)
-    raw.save_as(str(path))
+    # pydicom ≥ 3.0 deprecates Dataset.save_as() in favour of pydicom.dcmwrite().
+    if hasattr(pydicom, "dcmwrite"):
+        pydicom.dcmwrite(str(path), raw)
+    else:
+        raw.save_as(str(path))

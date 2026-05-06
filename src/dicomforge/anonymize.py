@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
@@ -91,20 +92,22 @@ class UidRemapper:
         self.root = normalized_root
         self.salt = salt
         self._cache: Dict[str, str] = {}
+        self._lock = threading.Lock()
 
     def remap(self, uid: object) -> str:
         original = str(uid).strip()
         if not original:
             return ""
-        cached = self._cache.get(original)
-        if cached is not None:
-            return cached
-        digest = sha256(f"{self.salt}\0{original}".encode("utf-8")).digest()
-        suffix = str(int.from_bytes(digest[:16], "big"))
-        available = 64 - len(self.root) - 1
-        remapped = f"{self.root}.{suffix[:available]}"
-        self._cache[original] = remapped
-        return remapped
+        with self._lock:
+            cached = self._cache.get(original)
+            if cached is not None:
+                return cached
+            digest = sha256(f"{self.salt}\0{original}".encode("utf-8")).digest()
+            suffix = str(int.from_bytes(digest[:16], "big"))
+            available = 64 - len(self.root) - 1
+            remapped = f"{self.root}.{suffix[:available]}"
+            self._cache[original] = remapped
+            return remapped
 
 
 _UID_TAGS = (
@@ -112,9 +115,12 @@ _UID_TAGS = (
     Tag.SeriesInstanceUID,
     Tag.SOPInstanceUID,
     Tag.FrameOfReferenceUID,
+    Tag.MediaStorageSOPInstanceUID,
+    Tag.ReferencedSOPInstanceUID,
 )
 
 _BASIC_PROFILE_RULES = (
+    # Patient identity
     Rule(Tag.PatientName, AnonymizationAction.REPLACE, "Anonymous"),
     Rule(Tag.PatientID, AnonymizationAction.REPLACE, "ANON"),
     Rule(Tag.PatientBirthDate, AnonymizationAction.EMPTY),
@@ -123,22 +129,41 @@ _BASIC_PROFILE_RULES = (
     Rule(Tag.PatientTelephoneNumbers, AnonymizationAction.DELETE),
     Rule(Tag.OtherPatientIDs, AnonymizationAction.DELETE),
     Rule(Tag.PatientAge, AnonymizationAction.EMPTY),
+    Rule(Tag.PatientWeight, AnonymizationAction.DELETE),
+    Rule(Tag.PatientSize, AnonymizationAction.DELETE),
+    Rule(Tag.PatientComments, AnonymizationAction.DELETE),
+    Rule(Tag.EthnicGroup, AnonymizationAction.DELETE),
+    Rule(Tag.PregnancyStatus, AnonymizationAction.DELETE),
+    Rule(Tag.SmokingStatus, AnonymizationAction.DELETE),
+    Rule(Tag.MedicalAlerts, AnonymizationAction.DELETE),
+    Rule(Tag.Allergies, AnonymizationAction.DELETE),
+    Rule(Tag.AdmittingDiagnosesDescription, AnonymizationAction.DELETE),
+    # Dates and times
     Rule(Tag.AccessionNumber, AnonymizationAction.EMPTY),
     Rule(Tag.StudyDate, AnonymizationAction.EMPTY),
     Rule(Tag.SeriesDate, AnonymizationAction.EMPTY),
     Rule(Tag.AcquisitionDate, AnonymizationAction.EMPTY),
     Rule(Tag.ContentDate, AnonymizationAction.EMPTY),
+    Rule(Tag.AcquisitionDateTime, AnonymizationAction.EMPTY),
     Rule(Tag.StudyTime, AnonymizationAction.EMPTY),
     Rule(Tag.SeriesTime, AnonymizationAction.EMPTY),
     Rule(Tag.AcquisitionTime, AnonymizationAction.EMPTY),
     Rule(Tag.ContentTime, AnonymizationAction.EMPTY),
+    # Institution / personnel
     Rule(Tag.InstitutionName, AnonymizationAction.EMPTY),
     Rule(Tag.InstitutionAddress, AnonymizationAction.DELETE),
+    Rule(Tag.InstitutionalDepartmentName, AnonymizationAction.DELETE),
     Rule(Tag.ReferringPhysicianName, AnonymizationAction.EMPTY),
     Rule(Tag.PerformingPhysicianName, AnonymizationAction.EMPTY),
     Rule(Tag.OperatorsName, AnonymizationAction.EMPTY),
+    Rule(Tag.AttendingPhysicianName, AnonymizationAction.EMPTY),
+    Rule(Tag.RequestingPhysician, AnonymizationAction.DELETE),
+    Rule(Tag.RequestedProcedureDescription, AnonymizationAction.EMPTY),
+    # Equipment identification
     Rule(Tag.StationName, AnonymizationAction.EMPTY),
+    Rule(Tag.DeviceSerialNumber, AnonymizationAction.DELETE),
     Rule(Tag.StudyID, AnonymizationAction.EMPTY),
+    # De-identification markers (always set)
     Rule(Tag.LongitudinalTemporalInformationModified, AnonymizationAction.REPLACE, "REMOVED"),
     Rule(Tag.PatientIdentityRemoved, AnonymizationAction.REPLACE, "YES"),
     Rule(

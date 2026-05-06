@@ -111,3 +111,38 @@ TransferSyntax.register(
     is_explicit_vr=True,
     is_encapsulated=True,
 )
+TransferSyntax.register(
+    TransferSyntaxUID.JPEGExtendedProcess2and4,
+    "JPEG Extended Process 2 and 4",
+    is_little_endian=True,
+    is_explicit_vr=True,
+    is_encapsulated=True,
+)
+TransferSyntax.register(
+    TransferSyntaxUID.JPEGLSNearLossless,
+    "JPEG-LS Near-Lossless",
+    is_little_endian=True,
+    is_explicit_vr=True,
+    is_encapsulated=True,
+)
+TransferSyntax.register(
+    TransferSyntaxUID.JPEG2000,
+    "JPEG 2000 (Lossy or Lossless)",
+    is_little_endian=True,
+    is_explicit_vr=True,
+    is_encapsulated=True,
+)
+TransferSyntax.register(
+    TransferSyntaxUID.HighThroughputJPEG2000Lossless,
+    "High-Throughput JPEG 2000 Lossless",
+    is_little_endian=True,
+    is_explicit_vr=True,
+    is_encapsulated=True,
+)
+TransferSyntax.register(
+    TransferSyntaxUID.HighThroughputJPEG2000,
+    "High-Throughput JPEG 2000",
+    is_little_endian=True,
+    is_explicit_vr=True,
+    is_encapsulated=True,
+)

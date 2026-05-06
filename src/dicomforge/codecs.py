@@ -55,22 +55,29 @@ class CodecRegistry:
         return True
 
 
-def default_registry() -> CodecRegistry:
-    """Return support for uncompressed syntaxes available in the lightweight core."""
+_DEFAULT_REGISTRY: Optional[CodecRegistry] = None
 
-    return CodecRegistry(
-        [
-            Codec(
-                name="native-uncompressed",
-                transfer_syntax_uids=frozenset(
-                    {
-                        TransferSyntaxUID.ImplicitVRLittleEndian,
-                        TransferSyntaxUID.ExplicitVRLittleEndian,
-                        TransferSyntaxUID.ExplicitVRBigEndian,
-                    }
-                ),
-                can_decode=True,
-                can_encode=True,
-            )
-        ]
-    )
+
+def default_registry() -> CodecRegistry:
+    """Return (cached) support for uncompressed syntaxes in the lightweight core."""
+
+    global _DEFAULT_REGISTRY
+    if _DEFAULT_REGISTRY is None:
+        _DEFAULT_REGISTRY = CodecRegistry(
+            [
+                Codec(
+                    name="native-uncompressed",
+                    transfer_syntax_uids=frozenset(
+                        {
+                            TransferSyntaxUID.ImplicitVRLittleEndian,
+                            TransferSyntaxUID.ExplicitVRLittleEndian,
+                            TransferSyntaxUID.DeflatedExplicitVRLittleEndian,
+                            TransferSyntaxUID.ExplicitVRBigEndian,
+                        }
+                    ),
+                    can_decode=True,
+                    can_encode=True,
+                )
+            ]
+        )
+    return _DEFAULT_REGISTRY

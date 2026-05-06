@@ -144,22 +144,52 @@ def dataset_from_message(message: JsonObject) -> DicomDataset:
     return DicomDataset({key: _decode_value(value) for key, value in message.items()})
 
 
-async def _read_message(reader: asyncio.StreamReader) -> JsonObject:
-    size_bytes = await reader.readexactly(4)
+_DEFAULT_READ_TIMEOUT: float = 30.0
+_MAX_MESSAGE_BYTES: int = 64 * 1024 * 1024  # 64 MiB hard cap
+
+
+async def _read_message(
+    reader: asyncio.StreamReader,
+    *,
+    timeout: Optional[float] = _DEFAULT_READ_TIMEOUT,
+) -> JsonObject:
+    try:
+        size_bytes = await asyncio.wait_for(reader.readexactly(4), timeout=timeout)
+    except asyncio.TimeoutError:
+        raise NetworkError(
+            f"Timed out waiting for a DIMSE message header after {timeout}s."
+        )
     size = int.from_bytes(size_bytes, "big")
     if size <= 0:
         raise NetworkError("Received an empty networking message.")
-    payload = await reader.readexactly(size)
+    if size > _MAX_MESSAGE_BYTES:
+        raise NetworkError(
+            f"Incoming DIMSE message claims {size} bytes — exceeds {_MAX_MESSAGE_BYTES}-byte limit."
+        )
+    try:
+        payload = await asyncio.wait_for(reader.readexactly(size), timeout=timeout)
+    except asyncio.TimeoutError:
+        raise NetworkError(
+            f"Timed out reading a {size}-byte DIMSE message after {timeout}s."
+        )
     decoded = json.loads(payload.decode("utf-8"))
     if not isinstance(decoded, dict):
         raise NetworkError("Received a malformed networking message.")
     return decoded
 
 
-async def _write_message(writer: asyncio.StreamWriter, message: JsonObject) -> None:
+async def _write_message(
+    writer: asyncio.StreamWriter,
+    message: JsonObject,
+    *,
+    timeout: Optional[float] = _DEFAULT_READ_TIMEOUT,
+) -> None:
     payload = json.dumps(message, separators=(",", ":")).encode("utf-8")
     writer.write(len(payload).to_bytes(4, "big") + payload)
-    await writer.drain()
+    try:
+        await asyncio.wait_for(writer.drain(), timeout=timeout)
+    except asyncio.TimeoutError:
+        raise NetworkError(f"Timed out flushing a DIMSE message after {timeout}s.")
 
 
 async def _maybe_await(value: Union[Any, Awaitable[Any]]) -> Any:

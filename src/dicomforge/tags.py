@@ -73,6 +73,60 @@ class Tag:
     MediaStorageSOPInstanceUID: ClassVar["Tag"]
     ImplementationClassUID: ClassVar["Tag"]
 
+    # Study / Series / Instance
+    StudyDescription: ClassVar["Tag"]
+    SeriesDescription: ClassVar["Tag"]
+    SeriesNumber: ClassVar["Tag"]
+    InstanceNumber: ClassVar["Tag"]
+    ImageType: ClassVar["Tag"]
+    AcquisitionNumber: ClassVar["Tag"]
+    AcquisitionDateTime: ClassVar["Tag"]
+    ProtocolName: ClassVar["Tag"]
+    RequestedProcedureDescription: ClassVar["Tag"]
+
+    # Equipment
+    Manufacturer: ClassVar["Tag"]
+    ManufacturerModelName: ClassVar["Tag"]
+    DeviceSerialNumber: ClassVar["Tag"]
+    SoftwareVersions: ClassVar["Tag"]
+    InstitutionalDepartmentName: ClassVar["Tag"]
+
+    # Patient clinical context
+    BodyPartExamined: ClassVar["Tag"]
+    PatientPosition: ClassVar["Tag"]
+    ViewPosition: ClassVar["Tag"]
+    PatientComments: ClassVar["Tag"]
+    PatientWeight: ClassVar["Tag"]
+    PatientSize: ClassVar["Tag"]
+    EthnicGroup: ClassVar["Tag"]
+    PregnancyStatus: ClassVar["Tag"]
+    SmokingStatus: ClassVar["Tag"]
+    MedicalAlerts: ClassVar["Tag"]
+    Allergies: ClassVar["Tag"]
+    AttendingPhysicianName: ClassVar["Tag"]
+    RequestingPhysician: ClassVar["Tag"]
+    AdmittingDiagnosesDescription: ClassVar["Tag"]
+
+    # Image geometry
+    PixelSpacing: ClassVar["Tag"]
+    ImagerPixelSpacing: ClassVar["Tag"]
+    SliceThickness: ClassVar["Tag"]
+    SliceLocation: ClassVar["Tag"]
+    SpacingBetweenSlices: ClassVar["Tag"]
+    ImagePositionPatient: ClassVar["Tag"]
+    ImageOrientationPatient: ClassVar["Tag"]
+
+    # Pixel processing
+    SmallestImagePixelValue: ClassVar["Tag"]
+    LargestImagePixelValue: ClassVar["Tag"]
+    BurnedInAnnotation: ClassVar["Tag"]
+
+    # Referenced SOP sequences
+    ReferencedStudySequence: ClassVar["Tag"]
+    ReferencedSeriesSequence: ClassVar["Tag"]
+    ReferencedSOPClassUID: ClassVar["Tag"]
+    ReferencedSOPInstanceUID: ClassVar["Tag"]
+
     def __post_init__(self) -> None:
         if not 0 <= self.group <= 0xFFFF or not 0 <= self.element <= 0xFFFF:
             raise InvalidTagError(f"Invalid DICOM tag ({self.group:04X},{self.element:04X})")
@@ -88,6 +142,14 @@ class Tag:
         """Return whether this tag belongs to a private group."""
 
         return self.group % 2 == 1
+
+    def __repr__(self) -> str:
+        keyword = next(
+            (k for k, v in self._KEYWORDS.items() if v == self), None
+        )
+        if keyword:
+            return f"Tag.{keyword}"
+        return f"Tag({self.group:04X},{self.element:04X})"
 
     def __str__(self) -> str:
         return f"({self.group:04X},{self.element:04X})"
@@ -181,3 +243,63 @@ Tag.RescaleIntercept = _register_keyword("RescaleIntercept", 0x0028, 0x1052)
 Tag.RescaleSlope = _register_keyword("RescaleSlope", 0x0028, 0x1053)
 Tag.RescaleType = _register_keyword("RescaleType", 0x0028, 0x1054)
 Tag.PixelData = _register_keyword("PixelData", 0x7FE0, 0x0010)
+
+# --- Study / Series / Instance identification ---
+Tag.StudyDescription = _register_keyword("StudyDescription", 0x0008, 0x1030)
+Tag.SeriesDescription = _register_keyword("SeriesDescription", 0x0008, 0x103E)
+Tag.SeriesNumber = _register_keyword("SeriesNumber", 0x0020, 0x0011)
+Tag.InstanceNumber = _register_keyword("InstanceNumber", 0x0020, 0x0013)
+Tag.ImageType = _register_keyword("ImageType", 0x0008, 0x0008)
+Tag.AcquisitionNumber = _register_keyword("AcquisitionNumber", 0x0020, 0x0012)
+Tag.AcquisitionDateTime = _register_keyword("AcquisitionDateTime", 0x0008, 0x002A)
+Tag.ProtocolName = _register_keyword("ProtocolName", 0x0018, 0x1030)
+Tag.RequestedProcedureDescription = _register_keyword(
+    "RequestedProcedureDescription", 0x0032, 0x1070
+)
+
+# --- Equipment ---
+Tag.Manufacturer = _register_keyword("Manufacturer", 0x0008, 0x0070)
+Tag.ManufacturerModelName = _register_keyword("ManufacturerModelName", 0x0008, 0x1090)
+Tag.DeviceSerialNumber = _register_keyword("DeviceSerialNumber", 0x0018, 0x1000)
+Tag.SoftwareVersions = _register_keyword("SoftwareVersions", 0x0018, 0x1020)
+Tag.InstitutionalDepartmentName = _register_keyword(
+    "InstitutionalDepartmentName", 0x0008, 0x1040
+)
+
+# --- Patient clinical context ---
+Tag.BodyPartExamined = _register_keyword("BodyPartExamined", 0x0018, 0x0015)
+Tag.PatientPosition = _register_keyword("PatientPosition", 0x0018, 0x5100)
+Tag.ViewPosition = _register_keyword("ViewPosition", 0x0018, 0x5101)
+Tag.PatientComments = _register_keyword("PatientComments", 0x0010, 0x4000)
+Tag.PatientWeight = _register_keyword("PatientWeight", 0x0010, 0x1030)
+Tag.PatientSize = _register_keyword("PatientSize", 0x0010, 0x1020)
+Tag.EthnicGroup = _register_keyword("EthnicGroup", 0x0010, 0x2160)
+Tag.PregnancyStatus = _register_keyword("PregnancyStatus", 0x0010, 0x21C0)
+Tag.SmokingStatus = _register_keyword("SmokingStatus", 0x0010, 0x21A0)
+Tag.MedicalAlerts = _register_keyword("MedicalAlerts", 0x0010, 0x2000)
+Tag.Allergies = _register_keyword("Allergies", 0x0010, 0x2110)
+Tag.AttendingPhysicianName = _register_keyword("AttendingPhysicianName", 0x0008, 0x1048)
+Tag.RequestingPhysician = _register_keyword("RequestingPhysician", 0x0032, 0x1032)
+Tag.AdmittingDiagnosesDescription = _register_keyword(
+    "AdmittingDiagnosesDescription", 0x0008, 0x1080
+)
+
+# --- Image geometry ---
+Tag.PixelSpacing = _register_keyword("PixelSpacing", 0x0028, 0x0030)
+Tag.ImagerPixelSpacing = _register_keyword("ImagerPixelSpacing", 0x0018, 0x1164)
+Tag.SliceThickness = _register_keyword("SliceThickness", 0x0050, 0x0018)
+Tag.SliceLocation = _register_keyword("SliceLocation", 0x0020, 0x1041)
+Tag.SpacingBetweenSlices = _register_keyword("SpacingBetweenSlices", 0x0018, 0x0088)
+Tag.ImagePositionPatient = _register_keyword("ImagePositionPatient", 0x0020, 0x0032)
+Tag.ImageOrientationPatient = _register_keyword("ImageOrientationPatient", 0x0020, 0x0037)
+
+# --- Pixel processing ---
+Tag.SmallestImagePixelValue = _register_keyword("SmallestImagePixelValue", 0x0028, 0x0106)
+Tag.LargestImagePixelValue = _register_keyword("LargestImagePixelValue", 0x0028, 0x0107)
+Tag.BurnedInAnnotation = _register_keyword("BurnedInAnnotation", 0x0028, 0x0301)
+
+# --- Referenced SOP sequences ---
+Tag.ReferencedStudySequence = _register_keyword("ReferencedStudySequence", 0x0008, 0x1110)
+Tag.ReferencedSeriesSequence = _register_keyword("ReferencedSeriesSequence", 0x0008, 0x1115)
+Tag.ReferencedSOPClassUID = _register_keyword("ReferencedSOPClassUID", 0x0008, 0x1150)
+Tag.ReferencedSOPInstanceUID = _register_keyword("ReferencedSOPInstanceUID", 0x0008, 0x1155)

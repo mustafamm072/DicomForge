@@ -66,6 +66,19 @@ class DicomDataset(MutableMapping[Tag, Any]):
     def __len__(self) -> int:
         return len(self._values)
 
+    def copy(self) -> "DicomDataset":
+        """Return a shallow copy of this dataset (sequences are not deep-copied)."""
+
+        return DicomDataset(dict(self._values))
+
+    def __repr__(self) -> str:
+        count = len(self._values)
+        sample_tags = sorted(self._values.keys())[:3]
+        sample = ", ".join(str(t) for t in sample_tags)
+        if count > 3:
+            sample += ", ..."
+        return f"DicomDataset({{{sample}}}, count={count})"
+
     def to_plain_dict(self) -> Dict[str, Any]:
         """Return a serializable dictionary keyed by canonical tag strings."""
 
