@@ -165,6 +165,63 @@ class DicomwebClientTests(unittest.TestCase):
             client.search_studies()
 
 
+class PathUidTests(unittest.TestCase):
+    """Tests for the _path_uid UID validation used in DICOMweb URL building."""
+
+    def _path_uid(self, uid: str) -> str:
+        from dicomforge.dicomweb import _path_uid
+        return _path_uid(uid)
+
+    def test_standard_uid_is_returned_unchanged(self):
+        self.assertEqual(self._path_uid("1.2.840.10008.5.1.4.1.1.2"), "1.2.840.10008.5.1.4.1.1.2")
+
+    def test_empty_string_raises(self):
+        with self.assertRaisesRegex(DicomValidationError, "empty"):
+            self._path_uid("")
+
+    def test_whitespace_only_raises(self):
+        with self.assertRaisesRegex(DicomValidationError, "empty"):
+            self._path_uid("   ")
+
+    def test_leading_whitespace_raises(self):
+        with self.assertRaisesRegex(DicomValidationError, "whitespace"):
+            self._path_uid(" 1.2.3")
+
+    def test_trailing_whitespace_raises(self):
+        with self.assertRaisesRegex(DicomValidationError, "whitespace"):
+            self._path_uid("1.2.3 ")
+
+    def test_internal_whitespace_raises(self):
+        with self.assertRaisesRegex(DicomValidationError, "alphabet"):
+            self._path_uid("1.2. 3")
+
+    def test_slash_in_uid_raises(self):
+        # A slash would split the path segment and reach the wrong endpoint.
+        with self.assertRaisesRegex(DicomValidationError, "alphabet"):
+            self._path_uid("1.2.3/4")
+
+    def test_invalid_characters_raise(self):
+        for bad in ["1.2.3#4", "1.2.3?q=1", "1.2.3\x004"]:
+            with self.subTest(uid=bad):
+                with self.assertRaises(DicomValidationError):
+                    self._path_uid(bad)
+
+    def test_client_url_contains_unencoded_dots(self):
+        """Verify the full client path uses readable dot-separated UIDs."""
+        transport = FakeTransport(
+            DicomwebResponse(
+                status_code=200,
+                headers={"content-type": "application/dicom+json"},
+                body=b"[]",
+            )
+        )
+        client = DicomwebClient("https://dicom.example", transport)
+        client.search_series("1.2.840.10008.5.1")
+        _, url, _, _ = transport.requests[0]
+        self.assertIn("1.2.840.10008.5.1", url)
+        self.assertNotIn("%2E", url)
+
+
 class MultipartTests(unittest.TestCase):
     def test_build_and_parse_multipart_related(self):
         body, content_type = build_multipart_related(

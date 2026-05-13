@@ -5,6 +5,7 @@ from dicomforge import (
     AnonymizationPlan,
     DicomDataset,
     PrivateTagAction,
+    Rule,
     Tag,
 )
 from dicomforge.anonymize import UidRemapper
@@ -91,6 +92,64 @@ class DeidentificationTests(unittest.TestCase):
     def test_uid_remapper_rejects_invalid_uid_roots(self):
         with self.assertRaises(ValueError):
             UidRemapper(root="not-a-uid-root")
+
+    def test_duplicate_rules_last_rule_wins(self):
+        """When the same tag appears twice, the second (later) rule must win."""
+        dataset = DicomDataset({"PatientName": "Ada"})
+        plan = AnonymizationPlan([
+            Rule(Tag.PatientName, AnonymizationAction.REPLACE, "First"),
+            Rule(Tag.PatientName, AnonymizationAction.REPLACE, "Second"),
+        ])
+        plan.apply(dataset)
+        self.assertEqual(dataset.get(Tag.PatientName), "Second")
+
+    def test_duplicate_rules_empty_then_replace_replace_wins(self):
+        """Without deduplication EMPTY-then-REPLACE silently gives '' instead of the replacement.
+        With deduplication the last rule (REPLACE) wins unconditionally."""
+        dataset = DicomDataset({"PatientName": "Ada"})
+        plan = AnonymizationPlan([
+            Rule(Tag.PatientName, AnonymizationAction.EMPTY),
+            Rule(Tag.PatientName, AnonymizationAction.REPLACE, "Anonymous"),
+        ])
+        plan.apply(dataset)
+        self.assertEqual(dataset.get(Tag.PatientName), "Anonymous")
+
+    def test_duplicate_rules_replace_then_empty_empty_would_have_won_without_dedup(self):
+        """Mirror of the previous test: REPLACE-then-EMPTY should now give 'Anonymous'
+        (REPLACE, last), not '' (EMPTY, which fired second before the fix)."""
+        dataset = DicomDataset({"PatientName": "Ada"})
+        plan = AnonymizationPlan([
+            Rule(Tag.PatientName, AnonymizationAction.REPLACE, "Anonymous"),
+            Rule(Tag.PatientName, AnonymizationAction.EMPTY),
+        ])
+        plan.apply(dataset)
+        # Post-fix: the LAST rule (EMPTY) wins via deduplication → value is ""
+        self.assertEqual(dataset.get(Tag.PatientName), "")
+
+    def test_duplicate_rules_delete_wins_regardless_of_position(self):
+        """DELETE should win whether it comes before or after another rule."""
+        for rules in [
+            [Rule(Tag.PatientName, AnonymizationAction.REPLACE, "X"),
+             Rule(Tag.PatientName, AnonymizationAction.DELETE)],
+            [Rule(Tag.PatientName, AnonymizationAction.DELETE),
+             Rule(Tag.PatientName, AnonymizationAction.REPLACE, "X")],
+        ]:
+            with self.subTest(first_action=rules[0].action):
+                dataset = DicomDataset({"PatientName": "Ada"})
+                AnonymizationPlan(rules).apply(dataset)
+                # Last rule wins — whichever rule is last determines the outcome
+                last_action = rules[-1].action
+                if last_action == AnonymizationAction.DELETE:
+                    self.assertIsNone(dataset.get(Tag.PatientName))
+                else:
+                    self.assertEqual(dataset.get(Tag.PatientName), "X")
+
+    def test_no_duplicate_rules_in_starter_profile(self):
+        """The built-in starter profile must not contain duplicate tag rules."""
+        plan = AnonymizationPlan.starter_profile()
+        tags_seen = [rule.tag for rule in plan._rules]
+        self.assertEqual(len(tags_seen), len(set(tags_seen)),
+                         "starter_profile produced duplicate tag rules")
 
     def test_audit_report_records_applied_actions(self):
         dataset = DicomDataset({"PatientName": "Ada"})

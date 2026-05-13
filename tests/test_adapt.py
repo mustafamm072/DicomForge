@@ -224,5 +224,110 @@ class NumpyAdapterTests(unittest.TestCase):
                 pixel_array(ds)
 
 
+class PilAdapterTests(unittest.TestCase):
+    def _skip_if_no_pixels(self):
+        try:
+            import numpy  # noqa: F401
+            from PIL import Image  # noqa: F401
+        except ImportError:
+            self.skipTest("numpy or Pillow not installed")
+
+    def _make_colour_dataset(self, photometric: str, pixels: "Any") -> DicomDataset:
+        import numpy as np
+        from dicomforge.uids import TransferSyntaxUID
+
+        rows, cols = pixels.shape[:2]
+        return DicomDataset(
+            {
+                Tag.TransferSyntaxUID: TransferSyntaxUID.ExplicitVRLittleEndian,
+                Tag.Rows: rows,
+                Tag.Columns: cols,
+                Tag.SamplesPerPixel: 3,
+                Tag.BitsAllocated: 8,
+                Tag.BitsStored: 8,
+                Tag.HighBit: 7,
+                Tag.PixelRepresentation: 0,
+                Tag.PlanarConfiguration: 0,
+                Tag.PhotometricInterpretation: photometric,
+                Tag.PixelData: pixels.astype(np.uint8).tobytes(),
+            }
+        )
+
+    def test_rgb_image_returned_unchanged(self):
+        self._skip_if_no_pixels()
+        import numpy as np
+        from PIL import Image
+
+        from dicomforge.adapt import to_pil_image
+
+        # Pure red pixel in RGB
+        pixels = np.array([[[255, 0, 0]]], dtype=np.uint8)
+        ds = self._make_colour_dataset("RGB", pixels)
+        img = to_pil_image(ds, apply_window=False)
+
+        self.assertIsInstance(img, Image.Image)
+        self.assertEqual(img.mode, "RGB")
+        r, g, b = img.getpixel((0, 0))
+        self.assertEqual(r, 255)
+        self.assertEqual(g, 0)
+        self.assertEqual(b, 0)
+
+    def test_ybr_full_converted_to_rgb(self):
+        """YBR_FULL white (Y=235, Cb=128, Cr=128) must map to near-white RGB."""
+        self._skip_if_no_pixels()
+        import numpy as np
+        from PIL import Image
+
+        from dicomforge.adapt import to_pil_image
+
+        # YBR_FULL encoding of white: Y=235, Cb=128, Cr=128
+        pixels = np.array([[[235, 128, 128]]], dtype=np.uint8)
+        ds = self._make_colour_dataset("YBR_FULL", pixels)
+        img = to_pil_image(ds, apply_window=False)
+
+        self.assertIsInstance(img, Image.Image)
+        self.assertEqual(img.mode, "RGB")
+        r, g, b = img.getpixel((0, 0))
+        # All channels should be near 235 (bright grey/white), definitely not tinted
+        self.assertGreater(r, 200)
+        self.assertGreater(g, 200)
+        self.assertGreater(b, 200)
+
+    def test_ybr_full_not_treated_as_rgb(self):
+        """Confirm YBR_FULL and RGB produce different pixel values for the same raw bytes."""
+        self._skip_if_no_pixels()
+        import numpy as np
+
+        from dicomforge.adapt import to_pil_image
+
+        # Raw bytes that look clearly wrong when misinterpreted as RGB
+        pixels = np.array([[[100, 50, 200]]], dtype=np.uint8)
+
+        ds_ybr = self._make_colour_dataset("YBR_FULL", pixels)
+        ds_rgb = self._make_colour_dataset("RGB", pixels)
+
+        rgb_from_ybr = to_pil_image(ds_ybr, apply_window=False).getpixel((0, 0))
+        rgb_from_rgb = to_pil_image(ds_rgb, apply_window=False).getpixel((0, 0))
+
+        # The two paths must produce different output for the same raw input
+        self.assertNotEqual(rgb_from_ybr, rgb_from_rgb)
+
+    def test_ybr_full_422_converted_to_rgb(self):
+        """YBR_FULL_422 uses the same coefficients as YBR_FULL."""
+        self._skip_if_no_pixels()
+        import numpy as np
+
+        from dicomforge.adapt import to_pil_image
+
+        pixels = np.array([[[235, 128, 128]]], dtype=np.uint8)
+        ds = self._make_colour_dataset("YBR_FULL_422", pixels)
+        img = to_pil_image(ds, apply_window=False)
+
+        r, g, b = img.getpixel((0, 0))
+        self.assertGreater(r, 200)
+        self.assertGreater(g, 200)
+        self.assertGreater(b, 200)
+
+
 if __name__ == "__main__":
     unittest.main()

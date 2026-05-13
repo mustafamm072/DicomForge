@@ -223,7 +223,9 @@ def to_pil_image(
     """Convert a DICOM frame to a ``PIL.Image.Image``.
 
     For monochrome images the output mode is ``'L'`` (8-bit greyscale).
-    For colour images (RGB / YBR) the output mode is ``'RGB'``.
+    For colour images the output mode is ``'RGB'``.  YBR colour spaces
+    (``YBR_FULL``, ``YBR_FULL_422``, ``YBR_PARTIAL_422``) are converted to
+    RGB automatically so the returned image is always display-correct.
 
     ``MONOCHROME1`` (bright = air) is automatically inverted to display
     convention (bright = high density).
@@ -291,7 +293,12 @@ def to_pil_image(
             arr_uint8 = 255 - arr_uint8
         return Image.fromarray(arr_uint8, mode="L")
 
-    # Colour: ensure uint8 for PIL
+    # Colour path — convert YBR colour spaces to RGB before PIL sees the data.
+    # PIL treats every (rows, cols, 3) uint8 array as RGB; passing raw YBR
+    # samples would produce heavily tinted or incorrect images.
+    arr = _ybr_to_rgb_if_needed(arr, photometric, np)
+
+    # Ensure uint8 for PIL
     if arr.dtype != np.uint8:
         vmin = float(arr.min())
         vmax = float(arr.max())
@@ -438,6 +445,57 @@ def _numpy_dtype(meta: FrameMetadata) -> Any:
     if meta.bits_allocated == 32:
         return np.int32 if meta.is_signed else np.uint32
     raise ValueError(f"Unsupported BitsAllocated={meta.bits_allocated} for numpy dtype mapping.")
+
+
+def _ybr_to_rgb_if_needed(arr: Any, photometric: str, np: Any) -> Any:
+    """Convert a YBR colour array to RGB when required for display.
+
+    DICOM allows colour pixel data to be stored in several YCbCr variants.
+    PIL expects RGB, so we must convert before constructing the Image.
+
+    Handled variants
+    ----------------
+    YBR_FULL
+        Full-range ITU-R BT.601 YCbCr.  Y in [0, 255], Cb/Cr in [0, 255]
+        with a 128 offset (0 = −128 after centering).
+    YBR_FULL_422
+        Same encoding as YBR_FULL; chroma subsampling is resolved at the
+        pixel-decode stage so the array already has one sample per pixel.
+    YBR_PARTIAL_422
+        Partial-range (studio-swing) YCbCr.  Y in [16, 235],
+        Cb/Cr in [16, 240].  Less common in DICOM but must not be
+        displayed as-is.
+
+    RGB and unknown variants are returned unchanged.
+    """
+    normalized = photometric.strip().upper()
+
+    if normalized in {"YBR_FULL", "YBR_FULL_422"}:
+        # ITU-R BT.601 full-range: Y∈[0,255], Cb/Cr∈[0,255] centred at 128
+        f = arr.astype(np.float64)
+        y  = f[..., 0]
+        cb = f[..., 1] - 128.0
+        cr = f[..., 2] - 128.0
+        r = y                   + 1.402   * cr
+        g = y - 0.344136 * cb  - 0.714136 * cr
+        b = y + 1.772   * cb
+        rgb = np.stack([r, g, b], axis=-1).clip(0, 255).astype(np.uint8)
+        return rgb
+
+    if normalized == "YBR_PARTIAL_422":
+        # ITU-R BT.601 partial-range (studio swing)
+        f = arr.astype(np.float64)
+        y  = (f[..., 0] - 16.0)  * (255.0 / 219.0)
+        cb = (f[..., 1] - 128.0) * (255.0 / 224.0)
+        cr = (f[..., 2] - 128.0) * (255.0 / 224.0)
+        r = y                   + 1.402   * cr
+        g = y - 0.344136 * cb  - 0.714136 * cr
+        b = y + 1.772   * cb
+        rgb = np.stack([r, g, b], axis=-1).clip(0, 255).astype(np.uint8)
+        return rgb
+
+    # RGB or any other variant — return as-is
+    return arr
 
 
 def _apply_window_numpy(arr: Any, center: float, width: float, np: Any) -> Any:

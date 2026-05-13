@@ -66,10 +66,19 @@ class DicomDataset(MutableMapping[Tag, Any]):
     def __len__(self) -> int:
         return len(self._values)
 
-    def copy(self) -> "DicomDataset":
-        """Return a shallow copy of this dataset (sequences are not deep-copied)."""
+    def copy(self, *, deep: bool = False) -> "DicomDataset":
+        """Return a copy of this dataset.
 
-        return DicomDataset(dict(self._values))
+        By default the copy is shallow: top-level tag values are copied by
+        reference, so mutating a nested sequence item will also affect the
+        original.  Pass ``deep=True`` to recursively copy all nested
+        :class:`DicomDataset` instances so the returned dataset is fully
+        independent.
+        """
+
+        if not deep:
+            return DicomDataset(dict(self._values))
+        return DicomDataset({tag: _deep_copy_value(value) for tag, value in self._values.items()})
 
     def __repr__(self) -> str:
         count = len(self._values)
@@ -93,3 +102,12 @@ def _iter_child_datasets(value: Any) -> Iterable[DicomDataset]:
         for item in value:
             if isinstance(item, DicomDataset):
                 yield item
+
+
+def _deep_copy_value(value: Any) -> Any:
+    """Recursively copy a tag value, deep-copying any nested DicomDatasets."""
+    if isinstance(value, DicomDataset):
+        return value.copy(deep=True)
+    if isinstance(value, list):
+        return [_deep_copy_value(item) for item in value]
+    return value

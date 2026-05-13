@@ -485,7 +485,30 @@ def _keyword_for_tag(tag: Tag) -> Optional[str]:
 
 
 def _path_uid(uid: str) -> str:
-    return quote(uid.strip(), safe="")
+    """Validate and percent-encode a UID for use as a URL path segment.
+
+    DICOM UIDs (PS3.5 §9.1) may only contain digits (0-9) and dots (.).
+    Passing an empty, whitespace-only, or structurally invalid UID would
+    produce a silently broken URL that fails at the network layer with no
+    useful error message.  We raise early instead.
+    """
+    stripped = uid.strip()
+    if not stripped:
+        raise DicomValidationError(
+            "UID must not be empty or whitespace."
+        )
+    if stripped != uid:
+        raise DicomValidationError(
+            f"UID must not have leading or trailing whitespace: {uid!r}"
+        )
+    # Internal whitespace or characters outside the DICOM UID alphabet
+    # would produce a %xx-encoded path that no server will match.
+    if not re.fullmatch(r"[0-9.]+", stripped):
+        raise DicomValidationError(
+            f"UID contains characters outside the DICOM UID alphabet "
+            f"([0-9.]): {uid!r}"
+        )
+    return quote(stripped, safe=".")
 
 
 def _raise_for_status(response: DicomwebResponse) -> None:

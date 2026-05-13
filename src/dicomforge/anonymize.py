@@ -198,7 +198,18 @@ class AnonymizationPlan:
         uid_remapper: Optional[UidRemapper] = None,
         private_tag_action: PrivateTagAction = PrivateTagAction.REMOVE,
     ) -> None:
-        self._rules = list(rules)
+        # Deduplicate by tag: when the same tag appears in multiple rules the
+        # LAST rule wins.  Rules are applied in the order of their first
+        # appearance, so callers can override built-in profile rules simply by
+        # appending their custom rules after the profile rules.
+        #
+        # Without deduplication the result depends on action combination and
+        # insertion order in a non-obvious way — for example EMPTY followed by
+        # REPLACE gives "Anonymous", but REPLACE followed by EMPTY gives "".
+        seen: Dict[Tag, Rule] = {}
+        for rule in rules:
+            seen[rule.tag] = rule  # later entry overwrites earlier for same tag
+        self._rules = list(seen.values())
         self._uid_remapper = uid_remapper or UidRemapper()
         self._private_tag_action = private_tag_action
 

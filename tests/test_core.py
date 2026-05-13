@@ -72,6 +72,35 @@ class DatasetTests(unittest.TestCase):
         self.assertTrue(str(child.get("SOPInstanceUID")).startswith("2.25."))
         self.assertTrue(any(event.path for event in report.events))
 
+    def test_copy_shallow_shares_nested_datasets(self):
+        child = DicomDataset({"PatientName": "Original"})
+        dataset = DicomDataset({"PatientName": "Top", (0x0008, 0x1115): [child]})
+
+        shallow = dataset.copy()
+        shallow.get((0x0008, 0x1115))[0].set("PatientName", "Mutated")
+
+        # shallow copy: mutation visible in original
+        self.assertEqual(child.get("PatientName"), "Mutated")
+
+    def test_copy_deep_isolates_nested_datasets(self):
+        child = DicomDataset({"PatientName": "Original"})
+        dataset = DicomDataset({"PatientName": "Top", (0x0008, 0x1115): [child]})
+
+        deep = dataset.copy(deep=True)
+        deep.get((0x0008, 0x1115))[0].set("PatientName", "Mutated")
+
+        # deep copy: original is unaffected
+        self.assertEqual(child.get("PatientName"), "Original")
+        self.assertEqual(deep.get((0x0008, 0x1115))[0].get("PatientName"), "Mutated")
+
+    def test_copy_deep_top_level_tags_are_independent(self):
+        dataset = DicomDataset({"PatientName": "Ada", "Modality": "CT"})
+
+        deep = dataset.copy(deep=True)
+        deep.set("PatientName", "Changed")
+
+        self.assertEqual(dataset.get("PatientName"), "Ada")
+
     def test_basic_profile_remains_compatibility_alias(self):
         dataset = DicomDataset({"PatientName": "Ada"})
 

@@ -142,6 +142,9 @@ class FrameMetadata:
     def is_signed(self) -> bool:
         return self.pixel_representation == 1
 
+    # DICOM PS3.3 C.7.6.3.1.5 — only these values are allowed for BitsAllocated.
+    _ALLOWED_BITS_ALLOCATED = {1, 8, 16, 32, 64}
+
     def validate(self) -> None:
         positive_fields = {
             "Rows": self.rows,
@@ -154,25 +157,49 @@ class FrameMetadata:
         for name, value in positive_fields.items():
             if value <= 0:
                 raise PixelMetadataError(f"{name} must be positive, got {value}.")
-        if self.bits_allocated % 8 != 0:
+
+        # BitsAllocated must be one of the DICOM-specified allowed values.
+        # Accepting arbitrary byte-aligned values (e.g. 24) would silently
+        # produce wrong pixel data when a numpy dtype is derived from it.
+        if self.bits_allocated not in self._ALLOWED_BITS_ALLOCATED:
             raise PixelMetadataError(
-                "BitsAllocated must be byte-aligned for safe core handling, "
+                f"BitsAllocated must be one of {sorted(self._ALLOWED_BITS_ALLOCATED)}, "
                 f"got {self.bits_allocated}."
             )
+
         if self.bits_stored > self.bits_allocated:
             raise PixelMetadataError(
                 f"BitsStored ({self.bits_stored}) cannot exceed "
                 f"BitsAllocated ({self.bits_allocated})."
             )
+
+        # HighBit must sit within the allocated word.  This is implied by the
+        # HighBit == BitsStored - 1 constraint below, but an explicit check here
+        # gives a more targeted error message when only BitsAllocated is wrong.
+        if self.high_bit >= self.bits_allocated:
+            raise PixelMetadataError(
+                f"HighBit ({self.high_bit}) must be less than "
+                f"BitsAllocated ({self.bits_allocated})."
+            )
+
         if self.high_bit != self.bits_stored - 1:
             raise PixelMetadataError(
-                f"HighBit ({self.high_bit}) should equal BitsStored - 1 ({self.bits_stored - 1})."
+                f"HighBit ({self.high_bit}) must equal BitsStored - 1 ({self.bits_stored - 1})."
             )
+
         if self.pixel_representation not in {0, 1}:
             raise PixelMetadataError(
                 "PixelRepresentation must be 0 (unsigned) or 1 (signed), "
                 f"got {self.pixel_representation}."
             )
+
+        # Signed data needs at least a sign bit plus one value bit.
+        if self.pixel_representation == 1 and self.bits_stored < 2:
+            raise PixelMetadataError(
+                f"BitsStored must be at least 2 for signed pixel data "
+                f"(PixelRepresentation=1), got {self.bits_stored}."
+            )
+
         expected_samples = expected_samples_per_pixel(self.photometric_interpretation)
         if self.samples_per_pixel != expected_samples:
             raise PixelMetadataError(

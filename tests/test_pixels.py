@@ -105,6 +105,58 @@ class FrameMetadataTests(unittest.TestCase):
         with self.assertRaisesRegex(PixelMetadataError, "SamplesPerPixel 1"):
             FrameMetadata.from_dataset(dataset)
 
+    def test_bits_allocated_must_be_dicom_allowed_value(self):
+        # 24 is byte-aligned but not a DICOM-allowed BitsAllocated value.
+        # It must be rejected before it reaches numpy dtype mapping.
+        dataset = native_ct_dataset()
+        dataset.set(Tag.BitsAllocated, 24)
+        dataset.set(Tag.BitsStored, 24)
+        dataset.set(Tag.HighBit, 23)
+
+        with self.assertRaisesRegex(PixelMetadataError, "BitsAllocated"):
+            FrameMetadata.from_dataset(dataset)
+
+    def test_high_bit_must_be_less_than_bits_allocated(self):
+        # HighBit >= BitsAllocated is physically impossible — the bit doesn't exist.
+        with self.assertRaisesRegex(PixelMetadataError, "HighBit"):
+            FrameMetadata(
+                rows=1,
+                columns=1,
+                samples_per_pixel=1,
+                bits_allocated=8,
+                bits_stored=8,
+                high_bit=8,   # equal to BitsAllocated — out of range
+                pixel_representation=0,
+                photometric_interpretation="MONOCHROME2",
+            )
+
+    def test_signed_pixel_representation_requires_bits_stored_at_least_2(self):
+        with self.assertRaisesRegex(PixelMetadataError, "BitsStored must be at least 2"):
+            FrameMetadata(
+                rows=1,
+                columns=1,
+                samples_per_pixel=1,
+                bits_allocated=8,
+                bits_stored=1,
+                high_bit=0,
+                pixel_representation=1,  # signed — needs ≥ 2 bits
+                photometric_interpretation="MONOCHROME2",
+            )
+
+    def test_valid_signed_16bit_passes_validation(self):
+        # Sanity check: a normal signed 16-bit CT dataset must not raise.
+        meta = FrameMetadata(
+            rows=4,
+            columns=4,
+            samples_per_pixel=1,
+            bits_allocated=16,
+            bits_stored=16,
+            high_bit=15,
+            pixel_representation=1,
+            photometric_interpretation="MONOCHROME2",
+        )
+        self.assertTrue(meta.is_signed)
+
 
 class PixelCapabilityTests(unittest.TestCase):
     def test_native_uncompressed_dataset_is_supported(self):
