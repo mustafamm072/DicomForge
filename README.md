@@ -1,5 +1,7 @@
 # DICOMForge
 
+[![DOI](https://zenodo.org/badge/1222011062.svg)](https://doi.org/10.5281/zenodo.20192747)
+
 DICOMForge is a Python DICOM processing library for medical imaging
 applications. The goal is a lightweight core with typed, predictable APIs,
 explicit safety boundaries, and optional integrations for heavier work such as
