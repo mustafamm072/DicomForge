@@ -3,6 +3,52 @@
 All notable changes to DicomForge are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-05-16
+
+### Added
+- `dicomforge.transport` — production-hardened HTTP transport implementations:
+  - `RequestsDicomwebTransport` — `requests`-backed transport with connection
+    pooling, configurable timeouts, and TLS client-certificate support
+  - `RetryTransport` — decorator that wraps any transport with automatic retry,
+    exponential back-off (configurable base, max, jitter), and per-attempt noise
+    to avoid thundering-herd effects on PACS systems
+  - `BearerTokenTransport` — decorator that injects `Authorization: Bearer <token>`
+    into every request; compose with `RetryTransport` and `RequestsDicomwebTransport`
+    to get a full production stack in three lines
+  - `StreamingDicomwebResponse` — response type returned by `RequestsDicomwebTransport.stream()`
+    with a lazy `body_iter` and a `drain()` helper for header-only reads
+- `parse_multipart_related_streaming(content_type, chunks)` — streaming multipart
+  parser that holds at most one part in memory, suitable for large WADO-RS study
+  responses delivered in byte chunks
+- `build_multipart_related_streaming(parts, ...)` — builds a multipart/related
+  upload body as a lazy byte generator so STOW-RS uploads do not require buffering
+  all instances simultaneously
+- `DicomwebClient.iter_retrieve_study_parts()` — streams study instances part-by-part;
+  falls back to `retrieve_study_parts()` for non-streaming transports
+- `DicomwebClient.iter_retrieve_series_parts()` — streaming series retrieval
+- `DicomwebClient.iter_retrieve_instance_parts()` — streaming instance retrieval
+- `DicomwebClient.stream_store_instances()` — STOW-RS upload driven by an iterable
+  of instance bytes without full-body buffering
+- `transport` optional dependency group in `pyproject.toml`:
+  `pip install dicomforge[transport]` installs `requests>=2.28`
+- `requests` added to the `dev` and `all` extras
+- `InvalidTagError` exported from the `dicomforge` top-level package
+- New `build_multipart_related_streaming` and `parse_multipart_related_streaming`
+  exported from the `dicomforge` top-level package
+
+### Fixed
+- `Tag.SliceThickness` was registered as `(0050,0018)` (DeviceDiameter) instead of
+  the correct `(0018,0050)`.  Any dataset access using `Tag.SliceThickness` would
+  silently return `None` on real DICOM files.
+- `io._KNOWN_VR` was missing ~30 entries including `AccessionNumber`, all date/time
+  tags, `InstitutionName`, `ReferringPhysicianName`, `FrameOfReferenceUID`,
+  `LongitudinalTemporalInformationModified`, `PatientIdentityRemoved`,
+  `DeidentificationMethod`, `ImagerPixelSpacing`, and the Referenced SOP sequence
+  tags.  Writing these tags via `io.write()` would produce VR `"UN"` instead of the
+  correct DICOM VR.
+
+---
+
 ## [0.6.0] — 2026-05-05
 
 ### Added

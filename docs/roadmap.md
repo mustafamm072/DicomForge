@@ -99,17 +99,21 @@ standard-library tests. All items below were shipped in v0.6.0.
 
 ---
 
-## 0.7 Production DICOMweb Transport
+## 0.7 Production DICOMweb Transport ✅
 
-Target: pluggable, production-hardened HTTP transport for DICOMweb clients.
+Status: implemented in `dicomforge.transport` with comprehensive tests.
 
-- `requests`-backed transport with connection pooling
-- automatic retry with exponential back-off and jitter
-- OAuth 2.0 / Bearer token auth helper
-- chunked WADO-RS streaming (iterator API, no full-body buffering)
-- STOW-RS streaming upload (no full multipart body in memory)
-- integration-test fixtures against Orthanc or a mocked DICOMweb server
-- TLS client certificate support
+- `RequestsDicomwebTransport` — `requests`-backed transport with connection
+  pooling and TLS client certificate support
+- `RetryTransport` — automatic retry with exponential back-off and jitter
+- `BearerTokenTransport` — OAuth 2.0 / Bearer token auth helper
+- `parse_multipart_related_streaming` — chunked WADO-RS streaming via iterator
+  API that holds at most one part in memory
+- `build_multipart_related_streaming` — STOW-RS streaming upload via generator
+  (no full multipart body in memory)
+- `DicomwebClient.iter_retrieve_*` — streaming retrieve methods that fall back
+  gracefully to buffered transports
+- All three transport types compose cleanly and are tested with mock transports
 
 ## 0.8 Compressed Pixel Access
 

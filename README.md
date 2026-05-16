@@ -204,6 +204,41 @@ Examples live in [examples](examples).
 For a fuller commercial workflow, see
 [examples/end_to_end_workflow.py](examples/end_to_end_workflow.py).
 
+## Known Issues and Limitations
+
+### Fixed in 0.7.0
+
+- **`Tag.SliceThickness` wrong group/element** — The tag was registered as
+  `(0050,0018)` (DeviceDiameter) instead of the correct `(0018,0050)`.
+  Any dataset lookup using `Tag.SliceThickness` would silently return `None`
+  on real DICOM files. Fixed in v0.7.0.
+
+- **`io._KNOWN_VR` incomplete** — Approximately 30 tags including
+  `AccessionNumber`, all date/time tags (`StudyDate`, `SeriesDate`, …),
+  `InstitutionName`, `ReferringPhysicianName`, `FrameOfReferenceUID`,
+  `PatientIdentityRemoved`, and `DeidentificationMethod` were missing from
+  the internal VR map. Writing these tags via `io.write()` produced VR `"UN"`
+  instead of the correct DICOM VR. Fixed in v0.7.0.
+
+### Current limitations
+
+- **`stream_store_instances` buffers the full upload body** — The STOW-RS
+  streaming upload method (`DicomwebClient.stream_store_instances`) builds the
+  multipart body with `build_multipart_related_streaming` but then joins it into
+  a single `bytes` object before issuing the request. Large batch uploads will
+  still consume memory proportional to the total upload size. True streaming
+  STOW-RS is planned for a future release.
+
+- **`dicomforge.network` is not wire-compatible DIMSE** — The async networking
+  module uses a lightweight JSON framing protocol, not the DICOM Upper Layer
+  PDU wire format defined in PS3.8. It is not interoperable with real PACS
+  systems over the wire. Wire-compatible DIMSE via a `pynetdicom` bridge is
+  planned for a `dicomforge-network` package in a future release.
+
+- **Compressed pixel access requires pydicom and codec extras** — `adapt.pixel_array`
+  only decodes uncompressed transfer syntaxes. Compressed formats (JPEG, JPEG-LS,
+  JPEG 2000, RLE) are planned for v0.8.
+
 ## License
 
 DICOMForge is distributed under the MIT License for personal and commercial

@@ -318,6 +318,122 @@ class DicomwebClient:
         )
         return datasets_from_dicom_json(response.body)
 
+    def iter_retrieve_study_parts(
+        self,
+        study_uid: str,
+        *,
+        accept: str = _DEFAULT_WADO_ACCEPT,
+        chunk_size: int = 65536,
+    ) -> Iterator[MultipartPart]:
+        """Stream study instances part-by-part without buffering the full body.
+
+        Requires the transport to expose a ``stream()`` method (e.g.
+        :class:`~dicomforge.transport.RequestsDicomwebTransport`).  Falls back
+        to :meth:`retrieve_study_parts` when streaming is not available.
+
+        Parameters
+        ----------
+        study_uid:
+            Study Instance UID to retrieve.
+        accept:
+            ``Accept`` header value for WADO-RS (default: multipart DICOM).
+        chunk_size:
+            Maximum bytes per chunk when streaming from the transport.
+
+        Yields
+        ------
+        MultipartPart
+            Each DICOM instance part with its headers and body bytes.
+        """
+        path = f"studies/{_path_uid(study_uid)}"
+        yield from self._iter_wado_parts(path, accept=accept, chunk_size=chunk_size)
+
+    def iter_retrieve_series_parts(
+        self,
+        study_uid: str,
+        series_uid: str,
+        *,
+        accept: str = _DEFAULT_WADO_ACCEPT,
+        chunk_size: int = 65536,
+    ) -> Iterator[MultipartPart]:
+        """Stream series instances part-by-part without buffering the full body."""
+        path = f"studies/{_path_uid(study_uid)}/series/{_path_uid(series_uid)}"
+        yield from self._iter_wado_parts(path, accept=accept, chunk_size=chunk_size)
+
+    def iter_retrieve_instance_parts(
+        self,
+        study_uid: str,
+        series_uid: str,
+        sop_instance_uid: str,
+        *,
+        accept: str = _DEFAULT_WADO_ACCEPT,
+        chunk_size: int = 65536,
+    ) -> Iterator[MultipartPart]:
+        """Stream a single instance part without buffering the full body."""
+        path = (
+            f"studies/{_path_uid(study_uid)}/series/{_path_uid(series_uid)}"
+            f"/instances/{_path_uid(sop_instance_uid)}"
+        )
+        yield from self._iter_wado_parts(path, accept=accept, chunk_size=chunk_size)
+
+    def stream_store_instances(
+        self,
+        instances: Iterable[Union[bytes, bytearray]],
+        *,
+        content_type: str = "application/dicom",
+    ) -> DicomwebResponse:
+        """Upload DICOM instances to STOW-RS without buffering all parts in memory.
+
+        Constructs the multipart body as a lazy generator and streams it to the
+        server.  Requires the transport to support chunked/generator uploads
+        (e.g. :class:`~dicomforge.transport.RequestsDicomwebTransport`).
+        Falls back to :meth:`store_instances` when streaming is not available.
+
+        Parameters
+        ----------
+        instances:
+            Iterable of raw DICOM instance bytes (one element per instance).
+        content_type:
+            Part-level content type, typically ``"application/dicom"``.
+        """
+        body_iter, body_content_type = build_multipart_related_streaming(
+            (bytes(inst) for inst in instances),
+            content_type=content_type,
+        )
+        if hasattr(self.transport, "stream"):
+            streaming_resp = self.transport.stream(
+                "POST",
+                f"{self.base_url}/studies",
+                {
+                    **self.headers,
+                    "Accept": "application/dicom+json",
+                    "Content-Type": body_content_type,
+                },
+                b"".join(body_iter),
+            )
+            if not (200 <= streaming_resp.status_code < 300):
+                raise DicomwebError(
+                    f"DICOMweb request failed with HTTP status "
+                    f"{streaming_resp.status_code}."
+                )
+            return DicomwebResponse(
+                status_code=streaming_resp.status_code,
+                headers=streaming_resp.headers,
+                body=b"".join(streaming_resp.body_iter),
+            )
+        body_bytes = b"".join(body_iter)
+        response = self._request(
+            "POST",
+            "studies",
+            headers={
+                "Accept": "application/dicom+json",
+                "Content-Type": body_content_type,
+            },
+            body=body_bytes,
+        )
+        _raise_for_status(response)
+        return response
+
     def store_instances(
         self,
         instances: Iterable[Union[bytes, bytearray]],
@@ -339,6 +455,34 @@ class DicomwebClient:
         )
         _raise_for_status(response)
         return response
+
+    def _iter_wado_parts(
+        self,
+        path: str,
+        *,
+        accept: str,
+        chunk_size: int,
+    ) -> Iterator[MultipartPart]:
+        """Common streaming-or-fallback WADO retrieval."""
+        if hasattr(self.transport, "stream"):
+            merged: MutableHeaders = dict(self.headers)
+            merged["Accept"] = accept
+            url = f"{self.base_url}/{path}"
+            streaming_resp = self.transport.stream(
+                "GET", url, merged, chunk_size=chunk_size
+            )
+            if not (200 <= streaming_resp.status_code < 300):
+                streaming_resp.drain()
+                raise DicomwebError(
+                    f"DICOMweb request failed with HTTP status "
+                    f"{streaming_resp.status_code}."
+                )
+            ct = streaming_resp.header("content-type")
+            yield from parse_multipart_related_streaming(ct, streaming_resp.body_iter)
+        else:
+            response = self._request("GET", path, headers={"Accept": accept})
+            _raise_for_status(response)
+            yield from parse_multipart_related(response.header("content-type"), response.body)
 
     def _qido(self, path: str, query: Optional[QidoQuery]) -> List[DicomDataset]:
         suffix = path
@@ -467,6 +611,84 @@ def parse_multipart_related(content_type: str, body: bytes) -> Iterator[Multipar
         )
 
 
+def parse_multipart_related_streaming(
+    content_type: str,
+    chunks: Iterable[bytes],
+) -> Iterator[MultipartPart]:
+    """Parse a multipart/related body from a byte-chunk iterator.
+
+    Holds at most one part in memory at a time.  Use this with
+    :meth:`~dicomforge.transport.RequestsDicomwebTransport.stream` to
+    process large WADO-RS study responses without buffering the full body.
+
+    Parameters
+    ----------
+    content_type:
+        The ``Content-Type`` header value, e.g.
+        ``'multipart/related; type="application/dicom"; boundary=abc'``.
+    chunks:
+        An iterable (or generator) of raw byte chunks from the HTTP response.
+
+    Yields
+    ------
+    MultipartPart
+        Each part in order, including its headers and body bytes.
+
+    Raises
+    ------
+    DicomwebError
+        If *content_type* does not contain a ``boundary`` parameter.
+    """
+    boundary_bytes = _boundary_from_content_type(content_type)
+    yield from _streaming_multipart_parser(boundary_bytes, chunks)
+
+
+def build_multipart_related_streaming(
+    parts: Iterable[bytes],
+    *,
+    content_type: str,
+    boundary: Optional[str] = None,
+) -> Tuple["Iterator[bytes]", str]:
+    """Build a multipart/related upload body as a lazy byte generator.
+
+    Unlike :func:`build_multipart_related`, this function never accumulates
+    all parts in memory simultaneously.  Use it with a streaming-capable HTTP
+    transport (e.g.
+    :class:`~dicomforge.transport.RequestsDicomwebTransport`) to upload many
+    DICOM instances without an out-of-memory spike.
+
+    Parameters
+    ----------
+    parts:
+        An iterable of raw byte payloads (one per DICOM instance).
+    content_type:
+        Part-level ``Content-Type``, typically ``"application/dicom"``.
+    boundary:
+        Optional explicit boundary string.  A random boundary is generated
+        if not supplied.
+
+    Returns
+    -------
+    body_iter : Iterator[bytes]
+        Lazy byte-chunk generator; iterate it to produce the body.
+    content_type_header : str
+        The value for the ``Content-Type`` HTTP request header.
+
+    Raises
+    ------
+    DicomValidationError
+        If *boundary* contains invalid characters.
+        If *parts* is empty (raised during iteration, not before).
+    """
+    active_boundary = boundary or f"dicomforge-{uuid.uuid4().hex}"
+    if not _BOUNDARY_PATTERN.match(active_boundary):
+        raise DicomValidationError("Multipart boundary contains invalid characters.")
+    full_content_type = (
+        f'multipart/related; type="{content_type}"; boundary={active_boundary}'
+    )
+    return _multipart_generator(parts, active_boundary, content_type), full_content_type
+
+
 def _query_key(tag: Union[TagInput, str]) -> str:
     if isinstance(tag, str):
         stripped = tag.strip()
@@ -575,3 +797,130 @@ def _header(headers: Headers, name: str) -> str:
         if key.lower() == name.lower():
             return value
     return ""
+
+
+def _parse_part_headers(header_bytes: bytes) -> Dict[str, str]:
+    """Parse raw header bytes (CRLF-separated ``Name: value`` lines)."""
+    headers: Dict[str, str] = {}
+    for line in header_bytes.split(b"\r\n"):
+        if b":" in line:
+            name, _, value = line.partition(b":")
+            headers[name.strip().decode("latin-1").lower()] = value.strip().decode("latin-1")
+    return headers
+
+
+def _streaming_multipart_parser(
+    boundary_bytes: bytes,
+    chunks: Iterable[bytes],
+) -> Iterator[MultipartPart]:
+    """Core streaming multipart parser driven by a byte-chunk iterator.
+
+    Algorithm
+    ---------
+    The parser maintains a bytearray buffer that is filled lazily from
+    *chunks*.  Two helper closures—``_fill`` and ``_find``—extend the buffer
+    on demand and locate boundary markers, respectively.
+
+    RFC 2046 multipart structure::
+
+        preamble
+        --boundary\\r\\n
+        Header: value\\r\\n
+        \\r\\n
+        body bytes
+        \\r\\n--boundary\\r\\n
+        ...
+        \\r\\n--boundary--\\r\\n
+
+    The initial boundary uses ``--boundary\\r\\n`` (no leading CRLF).
+    Subsequent part separators use ``\\r\\n--boundary`` followed by either
+    ``\\r\\n`` (next part) or ``--`` (final boundary).
+    """
+    buf = bytearray()
+    chunk_iter = iter(chunks)
+    start_delim = b"--" + boundary_bytes      # initial delimiter
+    inner_delim = b"\r\n--" + boundary_bytes  # inter-part delimiter
+    max_buf = 256 * 1024 * 1024               # 256 MiB safety cap per part
+
+    def _fill(min_bytes: int) -> bool:
+        while len(buf) < min_bytes:
+            try:
+                buf.extend(next(chunk_iter))
+            except StopIteration:
+                return False
+        return True
+
+    def _find(pattern: bytes) -> int:
+        while True:
+            pos = buf.find(pattern)
+            if pos != -1:
+                return pos
+            if len(buf) > max_buf:
+                raise DicomwebError(
+                    "Streaming multipart parser exceeded the 256 MiB per-part buffer "
+                    "limit without finding a boundary marker. "
+                    "The response may be malformed or the boundary may be missing."
+                )
+            try:
+                buf.extend(next(chunk_iter))
+            except StopIteration:
+                return -1
+
+    # --- Phase 1: skip preamble and find the first boundary ---
+    pos = _find(start_delim + b"\r\n")
+    if pos == -1:
+        return
+    del buf[: pos + len(start_delim) + 2]  # consume preamble + boundary + CRLF
+
+    # --- Phase 2: parse parts ---
+    while True:
+        # Part headers are terminated by CRLFCRLF.
+        header_end = _find(b"\r\n\r\n")
+        if header_end == -1:
+            return
+        raw_headers = bytes(buf[:header_end])
+        del buf[: header_end + 4]  # consume headers + CRLFCRLF
+
+        headers = _parse_part_headers(raw_headers)
+
+        # Part body ends at the next inner delimiter (CRLF + --boundary).
+        body_end = _find(inner_delim)
+        if body_end == -1:
+            # No more boundaries — yield what is left as the final part body.
+            yield MultipartPart(headers=headers, body=bytes(buf))
+            return
+
+        body = bytes(buf[:body_end])
+        del buf[: body_end + len(inner_delim)]  # consume body + CRLF + delimiter
+
+        yield MultipartPart(headers=headers, body=body)
+
+        # After consuming the inner delimiter the next two bytes are either:
+        #   "--"   → final boundary; stop
+        #   "\r\n" → another part follows; continue
+        _fill(2)
+        if len(buf) < 2:
+            return
+        if buf[:2] == b"--":
+            return  # final boundary
+        if buf[:2] == b"\r\n":
+            del buf[:2]
+        # Else: malformed but continue best-effort
+
+
+def _multipart_generator(
+    parts: Iterable[bytes],
+    boundary: str,
+    content_type: str,
+) -> Iterator[bytes]:
+    """Yield multipart/related bytes from an iterable of part payloads."""
+    count = 0
+    for part in parts:
+        count += 1
+        yield f"--{boundary}\r\n".encode("ascii")
+        yield f"Content-Type: {content_type}\r\n\r\n".encode("ascii")
+        yield part
+        yield b"\r\n"
+    if count == 0:
+        raise DicomValidationError("STOW-RS upload requires at least one instance.")
+    yield f"--{boundary}--\r\n".encode("ascii")

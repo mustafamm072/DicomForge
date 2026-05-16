@@ -23,16 +23,25 @@ from dicomforge.dicomweb import (
     QidoQuery,
     UrllibDicomwebTransport,
     build_multipart_related,
+    build_multipart_related_streaming,
     dataset_from_dicom_json,
     dataset_to_dicom_json,
     datasets_from_dicom_json,
     parse_multipart_related,
+    parse_multipart_related_streaming,
 )
 from dicomforge.errors import (
     DicomForgeError,
     DicomValidationError,
+    InvalidTagError,
     MissingBackendError,
     UnsupportedTransferSyntaxError,
+)
+from dicomforge.transport import (
+    BearerTokenTransport,
+    RequestsDicomwebTransport,
+    RetryTransport,
+    StreamingDicomwebResponse,
 )
 from dicomforge.network import (
     Association,
@@ -93,6 +102,7 @@ __all__ = [
     # Errors
     "DicomForgeError",
     "DicomValidationError",
+    "InvalidTagError",
     "MissingBackendError",
     "NetworkError",
     "PixelMetadataError",
@@ -106,10 +116,17 @@ __all__ = [
     "QidoQuery",
     "UrllibDicomwebTransport",
     "build_multipart_related",
+    "build_multipart_related_streaming",
     "dataset_from_dicom_json",
     "dataset_to_dicom_json",
     "datasets_from_dicom_json",
     "parse_multipart_related",
+    "parse_multipart_related_streaming",
+    # Transport (0.7)
+    "BearerTokenTransport",
+    "RequestsDicomwebTransport",
+    "RetryTransport",
+    "StreamingDicomwebResponse",
     # Networking
     "Association",
     "AssociationClosedError",

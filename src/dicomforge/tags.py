@@ -287,7 +287,7 @@ Tag.AdmittingDiagnosesDescription = _register_keyword(
 # --- Image geometry ---
 Tag.PixelSpacing = _register_keyword("PixelSpacing", 0x0028, 0x0030)
 Tag.ImagerPixelSpacing = _register_keyword("ImagerPixelSpacing", 0x0018, 0x1164)
-Tag.SliceThickness = _register_keyword("SliceThickness", 0x0050, 0x0018)
+Tag.SliceThickness = _register_keyword("SliceThickness", 0x0018, 0x0050)
 Tag.SliceLocation = _register_keyword("SliceLocation", 0x0020, 0x1041)
 Tag.SpacingBetweenSlices = _register_keyword("SpacingBetweenSlices", 0x0018, 0x0088)
 Tag.ImagePositionPatient = _register_keyword("ImagePositionPatient", 0x0020, 0x0032)
