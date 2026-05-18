@@ -35,7 +35,7 @@ Validate a dataset before sending it to a PACS::
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Union
+from typing import Any, Dict, FrozenSet, List, Mapping, NamedTuple, Optional, Tuple, Union
 
 from dicomforge.anonymize import AnonymizationPlan, AnonymizationReport, PrivateTagAction
 from dicomforge.dataset import DicomDataset
@@ -404,6 +404,186 @@ def validate_dataset(dataset: DicomDataset) -> List[str]:
             "BurnedInAnnotation is 'YES' — pixel data may contain PHI. "
             "Review pixel content before distribution."
         )
+
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# IOD / SOP Class validation helpers
+# ---------------------------------------------------------------------------
+
+
+class _IodProfile(NamedTuple):
+    """Mandatory-attribute requirements for one SOP Class IOD."""
+
+    name: str
+    # Tags that MUST be present and non-empty (DICOM Type 1).
+    # A missing or empty value is reported as an error.
+    type1: Tuple[Tuple[Tag, str], ...]
+    # Tags that MUST be present, but may be empty (DICOM Type 2).
+    # A missing value is reported as a warning.
+    type2: Tuple[Tuple[Tag, str], ...]
+
+
+# Common image-module tags shared by all image SOP classes.
+_COMMON_TYPE1: Tuple[Tuple[Tag, str], ...] = (
+    (Tag.SOPClassUID, "SOPClassUID"),
+    (Tag.SOPInstanceUID, "SOPInstanceUID"),
+    (Tag.StudyInstanceUID, "StudyInstanceUID"),
+    (Tag.SeriesInstanceUID, "SeriesInstanceUID"),
+    (Tag.Modality, "Modality"),
+    (Tag.SamplesPerPixel, "SamplesPerPixel"),
+    (Tag.PhotometricInterpretation, "PhotometricInterpretation"),
+    (Tag.Rows, "Rows"),
+    (Tag.Columns, "Columns"),
+    (Tag.BitsAllocated, "BitsAllocated"),
+    (Tag.BitsStored, "BitsStored"),
+    (Tag.HighBit, "HighBit"),
+    (Tag.PixelRepresentation, "PixelRepresentation"),
+    (Tag.PixelData, "PixelData"),
+)
+
+_COMMON_TYPE2: Tuple[Tuple[Tag, str], ...] = (
+    (Tag.PatientName, "PatientName"),
+    (Tag.PatientID, "PatientID"),
+    (Tag.StudyDate, "StudyDate"),
+    (Tag.StudyTime, "StudyTime"),
+    (Tag.StudyID, "StudyID"),
+    (Tag.AccessionNumber, "AccessionNumber"),
+    (Tag.SeriesNumber, "SeriesNumber"),
+    (Tag.InstanceNumber, "InstanceNumber"),
+)
+
+# Per-SOP-class IOD profiles keyed by SOP Class UID string.
+_IOD_PROFILES: Dict[str, _IodProfile] = {
+    # CT Image Storage
+    "1.2.840.10008.5.1.4.1.1.2": _IodProfile(
+        name="CT Image Storage",
+        type1=_COMMON_TYPE1 + (
+            (Tag.ImageType, "ImageType"),
+            (Tag.RescaleIntercept, "RescaleIntercept"),
+            (Tag.RescaleSlope, "RescaleSlope"),
+        ),
+        type2=_COMMON_TYPE2 + (
+            (Tag.KVP, "KVP"),
+            (Tag.AcquisitionNumber, "AcquisitionNumber"),
+        ),
+    ),
+    # MR Image Storage
+    "1.2.840.10008.5.1.4.1.1.4": _IodProfile(
+        name="MR Image Storage",
+        type1=_COMMON_TYPE1 + (
+            (Tag.ImageType, "ImageType"),
+            (Tag.ScanningSequence, "ScanningSequence"),
+            (Tag.SequenceVariant, "SequenceVariant"),
+        ),
+        type2=_COMMON_TYPE2,
+    ),
+    # Ultrasound Image Storage
+    "1.2.840.10008.5.1.4.1.1.6.1": _IodProfile(
+        name="Ultrasound Image Storage",
+        type1=_COMMON_TYPE1,
+        type2=_COMMON_TYPE2,
+    ),
+    # Computed Radiography Image Storage
+    "1.2.840.10008.5.1.4.1.1.1": _IodProfile(
+        name="CR Image Storage",
+        type1=_COMMON_TYPE1 + (
+            (Tag.ImageType, "ImageType"),
+        ),
+        type2=_COMMON_TYPE2 + (
+            (Tag.BodyPartExamined, "BodyPartExamined"),
+        ),
+    ),
+    # Secondary Capture Image Storage — no pixel requirements from the IOD,
+    # but the common patient/study/series/instance baseline still applies.
+    "1.2.840.10008.5.1.4.1.1.7": _IodProfile(
+        name="Secondary Capture Image Storage",
+        type1=(
+            (Tag.SOPClassUID, "SOPClassUID"),
+            (Tag.SOPInstanceUID, "SOPInstanceUID"),
+            (Tag.StudyInstanceUID, "StudyInstanceUID"),
+            (Tag.SeriesInstanceUID, "SeriesInstanceUID"),
+        ),
+        type2=_COMMON_TYPE2,
+    ),
+}
+
+
+def validate_for_sop_class(
+    dataset: DicomDataset,
+    sop_class_uid: Optional[str] = None,
+) -> List[str]:
+    """Validate *dataset* against the mandatory attributes for its SOP Class.
+
+    Checks DICOM Type 1 (required, non-empty) and Type 2 (required, may be
+    empty) tag requirements for common image storage SOP Classes.  Type 3
+    (optional) and conditional attributes are not checked.
+
+    Supported SOP classes
+    ---------------------
+    * CT Image Storage (1.2.840.10008.5.1.4.1.1.2)
+    * MR Image Storage (1.2.840.10008.5.1.4.1.1.4)
+    * Ultrasound Image Storage (1.2.840.10008.5.1.4.1.1.6.1)
+    * CR Image Storage (1.2.840.10008.5.1.4.1.1.1)
+    * Secondary Capture Image Storage (1.2.840.10008.5.1.4.1.1.7)
+
+    For unrecognised SOP Classes the function returns a single informational
+    issue rather than raising, so callers can always iterate the result.
+
+    Parameters
+    ----------
+    dataset:
+        The dataset to validate.
+    sop_class_uid:
+        Override the SOP Class UID to validate against.  When *None* (the
+        default) the value is read from ``dataset.SOPClassUID``.
+
+    Returns
+    -------
+    List[str]
+        Human-readable issue strings, empty when no issues are found.
+        Issues are prefixed with ``[error]`` (Type 1 violations) or
+        ``[warning]`` (Type 2 violations).
+
+    Examples
+    --------
+    ::
+
+        from dicomforge.api import validate_for_sop_class
+        from dicomforge.uids import SopClassUID
+
+        issues = validate_for_sop_class(dataset, SopClassUID.CTImageStorage)
+        for issue in issues:
+            print(issue)
+    """
+    uid = sop_class_uid or str(dataset.get(Tag.SOPClassUID) or "").strip()
+    if not uid:
+        return ["[error] SOPClassUID is absent — cannot determine which IOD to validate against."]
+
+    profile = _IOD_PROFILES.get(uid)
+    if profile is None:
+        return [
+            f"[warning] SOP Class {uid!r} is not in the built-in IOD profile table. "
+            "No mandatory-attribute checks were performed."
+        ]
+
+    issues: List[str] = []
+
+    for tag, label in profile.type1:
+        val = dataset.get(tag)
+        if val is None or str(val).strip() == "":
+            issues.append(
+                f"[error] {profile.name} requires {label} {tag} "
+                "(Type 1 — must be present and non-empty)."
+            )
+
+    for tag, label in profile.type2:
+        if tag not in dataset:
+            issues.append(
+                f"[warning] {profile.name} expects {label} {tag} "
+                "(Type 2 — must be present, may be empty)."
+            )
 
     return issues
 

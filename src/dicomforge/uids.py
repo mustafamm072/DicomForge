@@ -1,6 +1,111 @@
-"""Selected DICOM UID constants used by DICOMForge APIs."""
+"""Selected DICOM UID constants and UID utility helpers."""
 
 from __future__ import annotations
+
+import re
+import uuid as _uuid
+from typing import Optional
+
+# ---------------------------------------------------------------------------
+# UID helpers
+# ---------------------------------------------------------------------------
+
+_UID_ROOT_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)*$")
+
+
+def is_valid_uid(uid: object) -> bool:
+    """Return *True* if *uid* conforms to the DICOM UID grammar (PS3.5 §9.1).
+
+    A well-formed DICOM UID:
+
+    * is a non-empty string of digits and dots,
+    * has a total length of at most 64 characters,
+    * contains no empty component (no leading, trailing, or consecutive dots),
+    * has no component with a leading zero unless that component is ``"0"``.
+
+    Parameters
+    ----------
+    uid:
+        Value to test.  Non-string values always return *False*.
+
+    Examples
+    --------
+    >>> is_valid_uid("1.2.840.10008.5.1.4.1.1.2")
+    True
+    >>> is_valid_uid("1.2.03.4")   # leading zero in component
+    False
+    >>> is_valid_uid("1.2." + "3" * 63)  # too long
+    False
+    """
+    if not isinstance(uid, str) or not uid or len(uid) > 64:
+        return False
+    components = uid.split(".")
+    for component in components:
+        # Empty component → leading/trailing/consecutive dot
+        if not component:
+            return False
+        # Components must be all-digit
+        if not component.isdigit():
+            return False
+        # Leading zero only allowed when the component is the single digit "0"
+        if len(component) > 1 and component[0] == "0":
+            return False
+    return True
+
+
+def generate_uid(root: Optional[str] = None) -> str:
+    """Generate a new, globally unique DICOM UID.
+
+    Uses the *2.25* organisational root by default, which is the DICOM-
+    standard way to derive a UID from a UUID (PS3.5 §B.2).  A UUID4 integer
+    rendered as a decimal number produces at most 39 digits, so the resulting
+    UID is at most 45 characters — well within the 64-character limit.
+
+    A custom organisational root may be supplied when you have been assigned
+    one by a registration authority.
+
+    Parameters
+    ----------
+    root:
+        Dot-separated numeric UID root (e.g. ``"1.2.840.99999"``).
+        Leading/trailing dots and whitespace are stripped automatically.
+        Defaults to ``"2.25"`` (UUID-derived UIDs).
+
+    Returns
+    -------
+    str
+        A valid DICOM UID string of length ≤ 64.
+
+    Raises
+    ------
+    ValueError
+        If *root* contains non-numeric components or is too long to leave
+        room for a unique suffix.
+
+    Examples
+    --------
+    >>> uid = generate_uid()
+    >>> uid.startswith("2.25.")
+    True
+    >>> is_valid_uid(uid)
+    True
+    >>> generate_uid("1.2.840.99999")  # doctest: +ELLIPSIS
+    '1.2.840.99999...'
+    """
+    active_root = "2.25" if root is None else root.strip().strip(".")
+    if not _UID_ROOT_RE.match(active_root):
+        raise ValueError(
+            f"UID root must contain only numeric dot-separated components, "
+            f"got {root!r}."
+        )
+    max_suffix_len = 64 - len(active_root) - 1  # reserve 1 char for the separating dot
+    if max_suffix_len < 1:
+        raise ValueError(
+            f"UID root {root!r} is too long ({len(active_root)} chars); "
+            "no room remains for a unique suffix."
+        )
+    suffix = str(_uuid.uuid4().int)  # decimal integer, at most 39 digits
+    return f"{active_root}.{suffix[:max_suffix_len]}"
 
 
 class SopClassUID:

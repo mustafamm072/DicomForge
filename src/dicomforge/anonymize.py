@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 import threading
 from dataclasses import dataclass
+from datetime import date as _date
+from datetime import timedelta as _timedelta
 from enum import Enum
 from hashlib import sha256
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -19,6 +21,7 @@ class AnonymizationAction(str, Enum):
     REPLACE = "replace"
     REMAP_UID = "remap_uid"
     UID_REMAP = "remap_uid"
+    SHIFT_DATE = "shift_date"
 
 
 class PrivateTagAction(str, Enum):
@@ -316,6 +319,15 @@ class AnonymizationPlan:
             elif rule.action == AnonymizationAction.REMAP_UID:
                 if before_present:
                     dataset.set(rule.tag, self._remap_value(dataset[rule.tag]))
+            elif rule.action == AnonymizationAction.SHIFT_DATE:
+                if before_present:
+                    offset = rule.replacement
+                    if not isinstance(offset, int):
+                        raise ValueError(
+                            f"SHIFT_DATE rule for {rule.tag} requires an integer day offset "
+                            f"in rule.replacement, got {type(offset).__name__!r}."
+                        )
+                    dataset.set(rule.tag, _shift_date_value(dataset[rule.tag], offset))
             events.append(
                 AnonymizationEvent(
                     tag=rule.tag,
@@ -361,3 +373,39 @@ def _iter_sequence_items(value: object) -> Iterable[DicomDataset]:
         for item in value:
             if isinstance(item, DicomDataset):
                 yield item
+
+
+def _shift_date_value(value: Any, offset_days: int) -> Any:
+    """Shift a DICOM date or datetime value by *offset_days* calendar days.
+
+    Handles two DICOM value representations:
+
+    * **DA** (Date) — ``YYYYMMDD``, exactly 8 characters.
+    * **DT** (DateTime) — starts with ``YYYYMMDD``; any trailing time
+      component (``HHmmSS.FFFFFF±HHMM``) is preserved verbatim.
+
+    If *value* is not a string, is empty, shorter than 8 characters, or
+    does not begin with a valid calendar date, it is returned unchanged
+    rather than raising — partial or missing dates should not crash a
+    de-identification run.
+
+    Parameters
+    ----------
+    value:
+        Raw tag value from the dataset.
+    offset_days:
+        Number of days to add (positive = future, negative = past).
+    """
+    if not isinstance(value, str) or len(value) < 8:
+        return value
+    date_part = value[:8]
+    rest = value[8:]  # preserved time component for DT values
+    try:
+        year = int(date_part[0:4])
+        month = int(date_part[4:6])
+        day = int(date_part[6:8])
+        shifted = _date(year, month, day) + _timedelta(days=offset_days)
+        return shifted.strftime("%Y%m%d") + rest
+    except (ValueError, OverflowError):
+        # Malformed date — return as-is rather than crashing the plan
+        return value

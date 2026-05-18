@@ -11,7 +11,7 @@ from dicomforge.anonymize import (
     Rule,
     UidRemapper,
 )
-from dicomforge.api import DicomFile, batch_anonymize, quick_anonymize, validate_dataset
+from dicomforge.api import DicomFile, batch_anonymize, quick_anonymize, validate_dataset, validate_for_sop_class
 from dicomforge.codecs import Codec, CodecRegistry
 from dicomforge.dataset import DicomDataset
 from dicomforge.dicomweb import (
@@ -74,7 +74,14 @@ from dicomforge.pixels import (
 )
 from dicomforge.tags import Tag
 from dicomforge.transfer_syntax import TransferSyntax
-from dicomforge.uids import DimseStatusCode, ImplementationUID, SopClassUID, TransferSyntaxUID
+from dicomforge.uids import (
+    DimseStatusCode,
+    ImplementationUID,
+    SopClassUID,
+    TransferSyntaxUID,
+    generate_uid,
+    is_valid_uid,
+)
 
 __all__ = [
     # Anonymization
@@ -92,6 +99,7 @@ __all__ = [
     "batch_anonymize",
     "quick_anonymize",
     "validate_dataset",
+    "validate_for_sop_class",
     # Codecs
     "Codec",
     "CodecRegistry",
@@ -157,4 +165,6 @@ __all__ = [
     "ImplementationUID",
     "SopClassUID",
     "TransferSyntaxUID",
+    "generate_uid",
+    "is_valid_uid",
 ]

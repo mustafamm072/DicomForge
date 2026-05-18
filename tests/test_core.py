@@ -1,6 +1,7 @@
 import unittest
 
 from dicomforge import AnonymizationAction, AnonymizationPlan, DicomDataset, Tag, TransferSyntax
+from dicomforge import generate_uid, is_valid_uid
 from dicomforge.codecs import default_registry
 from dicomforge.errors import UnsupportedTransferSyntaxError
 from dicomforge.uids import TransferSyntaxUID
@@ -107,6 +108,102 @@ class DatasetTests(unittest.TestCase):
         AnonymizationPlan.basic_profile().apply(dataset)
 
         self.assertEqual(dataset.get("PatientName"), "Anonymous")
+
+
+class UidHelpersTests(unittest.TestCase):
+
+    # ------------------------------------------------------------------
+    # is_valid_uid
+    # ------------------------------------------------------------------
+
+    def test_well_formed_uid_is_valid(self):
+        self.assertTrue(is_valid_uid("1.2.840.10008.5.1.4.1.1.2"))
+
+    def test_uid_at_exact_64_chars_is_valid(self):
+        # Construct a UID that is exactly 64 characters long
+        uid = "1.2." + "3" * 60  # 4 + 60 = 64 chars
+        self.assertEqual(len(uid), 64)
+        self.assertTrue(is_valid_uid(uid))
+
+    def test_uid_exceeding_64_chars_is_invalid(self):
+        uid = "1.2." + "3" * 61  # 65 chars
+        self.assertFalse(is_valid_uid(uid))
+
+    def test_empty_string_is_invalid(self):
+        self.assertFalse(is_valid_uid(""))
+
+    def test_non_string_is_invalid(self):
+        for bad in [None, 123, 1.2, b"1.2.3", ["1", "2"]]:
+            with self.subTest(value=bad):
+                self.assertFalse(is_valid_uid(bad))
+
+    def test_leading_zero_in_component_is_invalid(self):
+        self.assertFalse(is_valid_uid("1.2.03.4"))   # "03" has leading zero
+        self.assertFalse(is_valid_uid("1.02.3"))      # "02" has leading zero
+
+    def test_single_zero_component_is_valid(self):
+        # "0" on its own is the one allowed exception to the no-leading-zero rule
+        self.assertTrue(is_valid_uid("1.0.2"))
+        self.assertTrue(is_valid_uid("0"))
+
+    def test_trailing_dot_is_invalid(self):
+        self.assertFalse(is_valid_uid("1.2.3."))
+
+    def test_leading_dot_is_invalid(self):
+        self.assertFalse(is_valid_uid(".1.2.3"))
+
+    def test_consecutive_dots_are_invalid(self):
+        self.assertFalse(is_valid_uid("1..2.3"))
+
+    def test_non_digit_characters_are_invalid(self):
+        for bad in ["1.2.a", "1.2.3-4", "1.2.3/4", "1.2.3 4"]:
+            with self.subTest(uid=bad):
+                self.assertFalse(is_valid_uid(bad))
+
+    def test_well_known_transfer_syntax_uid_is_valid(self):
+        self.assertTrue(is_valid_uid(TransferSyntaxUID.ExplicitVRLittleEndian))
+
+    # ------------------------------------------------------------------
+    # generate_uid
+    # ------------------------------------------------------------------
+
+    def test_generated_uid_is_valid(self):
+        uid = generate_uid()
+        self.assertTrue(is_valid_uid(uid), f"Generated UID is not valid: {uid!r}")
+
+    def test_generated_uid_uses_2_25_root_by_default(self):
+        uid = generate_uid()
+        self.assertTrue(uid.startswith("2.25."))
+
+    def test_generated_uid_length_within_64(self):
+        for _ in range(20):  # run several times to catch probabilistic edge cases
+            self.assertLessEqual(len(generate_uid()), 64)
+
+    def test_generated_uids_are_unique(self):
+        uids = {generate_uid() for _ in range(100)}
+        self.assertEqual(len(uids), 100)
+
+    def test_custom_root_is_used(self):
+        uid = generate_uid(root="1.2.840.99999")
+        self.assertTrue(uid.startswith("1.2.840.99999."))
+        self.assertTrue(is_valid_uid(uid))
+
+    def test_custom_root_with_trailing_dot_is_normalised(self):
+        uid = generate_uid(root="1.2.3.")
+        self.assertTrue(uid.startswith("1.2.3."))
+        self.assertFalse(uid.startswith("1.2.3.."))
+
+    def test_invalid_root_raises_value_error(self):
+        for bad_root in ["not-a-uid", "1.2.abc", "1.2. 3"]:
+            with self.subTest(root=bad_root):
+                with self.assertRaises(ValueError):
+                    generate_uid(root=bad_root)
+
+    def test_root_too_long_raises_value_error(self):
+        # A root that fills all 64 characters leaves no room for a suffix
+        too_long = "1." + "2" * 62  # 64 chars — no room for ".suffix"
+        with self.assertRaises(ValueError):
+            generate_uid(root=too_long)
 
 
 class TransferSyntaxTests(unittest.TestCase):

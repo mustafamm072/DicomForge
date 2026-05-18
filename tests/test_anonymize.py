@@ -165,5 +165,113 @@ class DeidentificationTests(unittest.TestCase):
         self.assertIsInstance(report.events, tuple)
 
 
+class DateShiftTests(unittest.TestCase):
+    """Tests for AnonymizationAction.SHIFT_DATE and _shift_date_value."""
+
+    def _make_plan(self, tag: Tag, offset: int) -> AnonymizationPlan:
+        return AnonymizationPlan(
+            [Rule(tag, AnonymizationAction.SHIFT_DATE, offset)]
+        )
+
+    # ------------------------------------------------------------------
+    # _shift_date_value helper (imported directly for unit-level tests)
+    # ------------------------------------------------------------------
+
+    def test_shift_forward(self):
+        from dicomforge.anonymize import _shift_date_value
+        self.assertEqual(_shift_date_value("20260101", 30), "20260131")
+
+    def test_shift_backward(self):
+        from dicomforge.anonymize import _shift_date_value
+        self.assertEqual(_shift_date_value("20260101", -1), "20251231")
+
+    def test_shift_zero_days_unchanged(self):
+        from dicomforge.anonymize import _shift_date_value
+        self.assertEqual(_shift_date_value("20260315", 0), "20260315")
+
+    def test_shift_year_boundary(self):
+        from dicomforge.anonymize import _shift_date_value
+        self.assertEqual(_shift_date_value("20261231", 1), "20270101")
+
+    def test_shift_preserves_dt_time_component(self):
+        from dicomforge.anonymize import _shift_date_value
+        # DT value: YYYYMMDDHHMMSS.FFFFFF — date part shifted, time preserved
+        result = _shift_date_value("20260101120000.000000", 10)
+        self.assertEqual(result, "20260111120000.000000")
+
+    def test_shift_preserves_dt_timezone(self):
+        from dicomforge.anonymize import _shift_date_value
+        result = _shift_date_value("20260101143022.000000+0530", 1)
+        self.assertEqual(result, "20260102143022.000000+0530")
+
+    def test_empty_string_returned_unchanged(self):
+        from dicomforge.anonymize import _shift_date_value
+        self.assertEqual(_shift_date_value("", 10), "")
+
+    def test_non_string_returned_unchanged(self):
+        from dicomforge.anonymize import _shift_date_value
+        self.assertIsNone(_shift_date_value(None, 10))
+        self.assertEqual(_shift_date_value(20260101, 10), 20260101)
+
+    def test_short_string_returned_unchanged(self):
+        from dicomforge.anonymize import _shift_date_value
+        self.assertEqual(_shift_date_value("2026", 10), "2026")
+
+    def test_malformed_date_returned_unchanged(self):
+        from dicomforge.anonymize import _shift_date_value
+        self.assertEqual(_shift_date_value("99991399", 1), "99991399")  # month 13
+
+    # ------------------------------------------------------------------
+    # Integration: SHIFT_DATE inside AnonymizationPlan
+    # ------------------------------------------------------------------
+
+    def test_plan_shifts_study_date(self):
+        dataset = DicomDataset({Tag.StudyDate: "20260101"})
+        self._make_plan(Tag.StudyDate, -30).apply(dataset)
+        self.assertEqual(dataset.get(Tag.StudyDate), "20251202")
+
+    def test_plan_shifts_multiple_date_tags(self):
+        dataset = DicomDataset({
+            Tag.StudyDate: "20260101",
+            Tag.SeriesDate: "20260101",
+            Tag.AcquisitionDate: "20260102",
+        })
+        plan = AnonymizationPlan([
+            Rule(Tag.StudyDate, AnonymizationAction.SHIFT_DATE, -365),
+            Rule(Tag.SeriesDate, AnonymizationAction.SHIFT_DATE, -365),
+            Rule(Tag.AcquisitionDate, AnonymizationAction.SHIFT_DATE, -365),
+        ])
+        plan.apply(dataset)
+        self.assertEqual(dataset.get(Tag.StudyDate), "20250101")
+        self.assertEqual(dataset.get(Tag.SeriesDate), "20250101")
+        self.assertEqual(dataset.get(Tag.AcquisitionDate), "20250102")
+
+    def test_plan_skips_absent_date_tag(self):
+        dataset = DicomDataset({Tag.Modality: "CT"})
+        self._make_plan(Tag.StudyDate, 10).apply(dataset)
+        self.assertIsNone(dataset.get(Tag.StudyDate))
+
+    def test_plan_leaves_empty_date_tag_unchanged(self):
+        dataset = DicomDataset({Tag.StudyDate: ""})
+        self._make_plan(Tag.StudyDate, 10).apply(dataset)
+        self.assertEqual(dataset.get(Tag.StudyDate), "")
+
+    def test_plan_shift_date_appears_in_audit_report(self):
+        dataset = DicomDataset({Tag.StudyDate: "20260101"})
+        report = self._make_plan(Tag.StudyDate, 7).apply_with_report(dataset)
+        event = next(e for e in report.events if e.tag == Tag.StudyDate)
+        self.assertEqual(event.action, AnonymizationAction.SHIFT_DATE)
+        self.assertEqual(event.previous_value, "20260101")
+        self.assertEqual(event.new_value, "20260108")
+
+    def test_non_integer_offset_raises(self):
+        dataset = DicomDataset({Tag.StudyDate: "20260101"})
+        bad_plan = AnonymizationPlan(
+            [Rule(Tag.StudyDate, AnonymizationAction.SHIFT_DATE, "30")]
+        )
+        with self.assertRaises(ValueError):
+            bad_plan.apply(dataset)
+
+
 if __name__ == "__main__":
     unittest.main()
