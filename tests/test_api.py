@@ -2,7 +2,7 @@
 
 import unittest
 
-from dicomforge.api import DicomFile, validate_dataset
+from dicomforge.api import DicomFile, validate_dataset, validate_for_sop_class
 from dicomforge.dataset import DicomDataset
 from dicomforge.tags import Tag
 from dicomforge.uids import TransferSyntaxUID
@@ -352,6 +352,207 @@ class AnonymizationEnhancementsTests(unittest.TestCase):
             remapped_media,
             "SOPInstanceUID and MediaStorageSOPInstanceUID should remap to the same value",
         )
+
+
+class ValidateForSopClassTests(unittest.TestCase):
+    """Tests for validate_for_sop_class() IOD profile checks."""
+
+    def _ct_dataset(self, **overrides) -> DicomDataset:
+        """Minimal complete CT Image Storage dataset."""
+        import numpy as np
+        base = {
+            # SOP Common
+            Tag.SOPClassUID: "1.2.840.10008.5.1.4.1.1.2",
+            Tag.SOPInstanceUID: "1.2.3.4.5",
+            Tag.StudyInstanceUID: "1.2.3",
+            Tag.SeriesInstanceUID: "1.2.3.4",
+            # Patient
+            Tag.PatientName: "Test",
+            Tag.PatientID: "001",
+            Tag.StudyDate: "20260101",
+            Tag.StudyTime: "120000",
+            Tag.StudyID: "1",
+            Tag.AccessionNumber: "ACC001",
+            Tag.SeriesNumber: 1,
+            Tag.InstanceNumber: 1,
+            # Series
+            Tag.Modality: "CT",
+            # Image Pixel
+            Tag.SamplesPerPixel: 1,
+            Tag.PhotometricInterpretation: "MONOCHROME2",
+            Tag.Rows: 4,
+            Tag.Columns: 4,
+            Tag.BitsAllocated: 16,
+            Tag.BitsStored: 16,
+            Tag.HighBit: 15,
+            Tag.PixelRepresentation: 0,
+            Tag.PixelData: b"\x00" * 32,
+            # CT Image Module
+            Tag.ImageType: "ORIGINAL\\PRIMARY\\AXIAL",
+            Tag.RescaleIntercept: -1024.0,
+            Tag.RescaleSlope: 1.0,
+            Tag.KVP: "120",
+            Tag.AcquisitionNumber: 1,
+        }
+        base.update(overrides)
+        return DicomDataset(base)
+
+    def _mr_dataset(self, **overrides) -> DicomDataset:
+        """Minimal complete MR Image Storage dataset."""
+        base = {
+            Tag.SOPClassUID: "1.2.840.10008.5.1.4.1.1.4",
+            Tag.SOPInstanceUID: "1.2.3.4.5",
+            Tag.StudyInstanceUID: "1.2.3",
+            Tag.SeriesInstanceUID: "1.2.3.4",
+            Tag.PatientName: "Test",
+            Tag.PatientID: "001",
+            Tag.StudyDate: "20260101",
+            Tag.StudyTime: "120000",
+            Tag.StudyID: "1",
+            Tag.AccessionNumber: "ACC001",
+            Tag.SeriesNumber: 1,
+            Tag.InstanceNumber: 1,
+            Tag.Modality: "MR",
+            Tag.SamplesPerPixel: 1,
+            Tag.PhotometricInterpretation: "MONOCHROME2",
+            Tag.Rows: 4,
+            Tag.Columns: 4,
+            Tag.BitsAllocated: 16,
+            Tag.BitsStored: 16,
+            Tag.HighBit: 15,
+            Tag.PixelRepresentation: 0,
+            Tag.PixelData: b"\x00" * 32,
+            Tag.ImageType: "ORIGINAL\\PRIMARY",
+            Tag.ScanningSequence: "SE",
+            Tag.SequenceVariant: "NONE",
+        }
+        base.update(overrides)
+        return DicomDataset(base)
+
+    # ------------------------------------------------------------------
+    # Happy path
+    # ------------------------------------------------------------------
+
+    def test_complete_ct_dataset_has_no_issues(self):
+        self.assertEqual(validate_for_sop_class(self._ct_dataset()), [])
+
+    def test_complete_mr_dataset_has_no_issues(self):
+        self.assertEqual(validate_for_sop_class(self._mr_dataset()), [])
+
+    def test_sop_class_uid_can_be_overridden(self):
+        # Pass CT UID explicitly; dataset already has it too
+        issues = validate_for_sop_class(
+            self._ct_dataset(),
+            sop_class_uid="1.2.840.10008.5.1.4.1.1.2",
+        )
+        self.assertEqual(issues, [])
+
+    # ------------------------------------------------------------------
+    # Type 1 errors
+    # ------------------------------------------------------------------
+
+    def test_missing_type1_tag_reported_as_error(self):
+        ds = self._ct_dataset()
+        del ds[Tag.RescaleSlope]
+        issues = validate_for_sop_class(ds)
+        self.assertTrue(any("[error]" in i and "RescaleSlope" in i for i in issues))
+
+    def test_empty_type1_tag_reported_as_error(self):
+        ds = self._ct_dataset()
+        ds.set(Tag.ImageType, "")
+        issues = validate_for_sop_class(ds)
+        self.assertTrue(any("[error]" in i and "ImageType" in i for i in issues))
+
+    def test_missing_mr_scanning_sequence_is_error(self):
+        ds = self._mr_dataset()
+        del ds[Tag.ScanningSequence]
+        issues = validate_for_sop_class(ds)
+        self.assertTrue(any("[error]" in i and "ScanningSequence" in i for i in issues))
+
+    def test_missing_mr_sequence_variant_is_error(self):
+        ds = self._mr_dataset()
+        del ds[Tag.SequenceVariant]
+        issues = validate_for_sop_class(ds)
+        self.assertTrue(any("[error]" in i and "SequenceVariant" in i for i in issues))
+
+    # ------------------------------------------------------------------
+    # Type 2 warnings
+    # ------------------------------------------------------------------
+
+    def test_absent_type2_tag_reported_as_warning(self):
+        ds = self._ct_dataset()
+        del ds[Tag.StudyDate]
+        issues = validate_for_sop_class(ds)
+        self.assertTrue(any("[warning]" in i and "StudyDate" in i for i in issues))
+
+    def test_empty_type2_tag_is_not_a_warning(self):
+        # Type 2 tags may be empty — only absence triggers a warning
+        ds = self._ct_dataset()
+        ds.set(Tag.StudyDate, "")
+        issues = validate_for_sop_class(ds)
+        self.assertFalse(any("StudyDate" in i for i in issues))
+
+    # ------------------------------------------------------------------
+    # Unknown / missing SOP class
+    # ------------------------------------------------------------------
+
+    def test_unknown_sop_class_returns_informational_warning(self):
+        ds = self._ct_dataset()
+        ds.set(Tag.SOPClassUID, "9.9.9.9.9")
+        issues = validate_for_sop_class(ds)
+        self.assertEqual(len(issues), 1)
+        self.assertIn("[warning]", issues[0])
+
+    def test_missing_sop_class_returns_error(self):
+        ds = DicomDataset()
+        issues = validate_for_sop_class(ds)
+        self.assertEqual(len(issues), 1)
+        self.assertIn("[error]", issues[0])
+        self.assertIn("SOPClassUID", issues[0])
+
+    def test_explicit_unknown_uid_override_returns_warning(self):
+        issues = validate_for_sop_class(self._ct_dataset(), sop_class_uid="9.9.9.9")
+        self.assertEqual(len(issues), 1)
+        self.assertIn("[warning]", issues[0])
+
+    # ------------------------------------------------------------------
+    # Multiple issues at once
+    # ------------------------------------------------------------------
+
+    def test_multiple_missing_tags_all_reported(self):
+        ds = self._ct_dataset()
+        del ds[Tag.RescaleSlope]
+        del ds[Tag.RescaleIntercept]
+        del ds[Tag.StudyDate]
+        issues = validate_for_sop_class(ds)
+        labels = " ".join(issues)
+        self.assertIn("RescaleSlope", labels)
+        self.assertIn("RescaleIntercept", labels)
+        self.assertIn("StudyDate", labels)
+
+    # ------------------------------------------------------------------
+    # Secondary Capture — no pixel requirements
+    # ------------------------------------------------------------------
+
+    def test_secondary_capture_no_pixel_requirement(self):
+        ds = DicomDataset({
+            Tag.SOPClassUID: "1.2.840.10008.5.1.4.1.1.7",
+            Tag.SOPInstanceUID: "1.2.3.4.5",
+            Tag.StudyInstanceUID: "1.2.3",
+            Tag.SeriesInstanceUID: "1.2.3.4",
+            Tag.PatientName: "Test",
+            Tag.PatientID: "001",
+            Tag.StudyDate: "20260101",
+            Tag.StudyTime: "120000",
+            Tag.StudyID: "1",
+            Tag.AccessionNumber: "",
+            Tag.SeriesNumber: 1,
+            Tag.InstanceNumber: 1,
+        })
+        issues = validate_for_sop_class(ds)
+        # No pixel tags set — must have no errors (only possible warnings for empty Type2)
+        error_issues = [i for i in issues if "[error]" in i]
+        self.assertEqual(error_issues, [])
 
 
 if __name__ == "__main__":

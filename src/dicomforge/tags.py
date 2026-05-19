@@ -91,6 +91,11 @@ class Tag:
     SoftwareVersions: ClassVar["Tag"]
     InstitutionalDepartmentName: ClassVar["Tag"]
 
+    # Acquisition parameters
+    KVP: ClassVar["Tag"]
+    ScanningSequence: ClassVar["Tag"]
+    SequenceVariant: ClassVar["Tag"]
+
     # Patient clinical context
     BodyPartExamined: ClassVar["Tag"]
     PatientPosition: ClassVar["Tag"]
@@ -267,6 +272,9 @@ Tag.InstitutionalDepartmentName = _register_keyword(
 )
 
 # --- Patient clinical context ---
+Tag.KVP = _register_keyword("KVP", 0x0018, 0x0060)
+Tag.ScanningSequence = _register_keyword("ScanningSequence", 0x0018, 0x0020)
+Tag.SequenceVariant = _register_keyword("SequenceVariant", 0x0018, 0x0021)
 Tag.BodyPartExamined = _register_keyword("BodyPartExamined", 0x0018, 0x0015)
 Tag.PatientPosition = _register_keyword("PatientPosition", 0x0018, 0x5100)
 Tag.ViewPosition = _register_keyword("ViewPosition", 0x0018, 0x5101)
