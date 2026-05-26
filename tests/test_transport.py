@@ -95,6 +95,10 @@ class EncodeBodyTests(unittest.TestCase):
     def test_str_encoded_as_utf8(self):
         self.assertEqual(_encode_body("café"), "café".encode("utf-8"))
 
+    def test_iterable_body_passthrough_for_streaming_uploads(self):
+        body = iter([b"one", b"two"])
+        self.assertIs(_encode_body(body), body)
+
 
 # ---------------------------------------------------------------------------
 # RetryTransport
@@ -484,6 +488,24 @@ class DicomwebClientStreamingTests(unittest.TestCase):
         list(client.iter_retrieve_study_parts("1.2.3"))
         _, _, headers, _ = inner.stream_calls[0]
         self.assertEqual(headers["X-Auth"], "token")
+
+    def test_stream_store_instances_passes_lazy_body_to_streaming_transport(self):
+        inner = FakeStreamingTransport(
+            streaming_responses=[StreamingDicomwebResponse(200, {}, iter([b"{}"]))]
+        )
+        client = DicomwebClient("https://dicom.example", inner)
+        response = client.stream_store_instances([b"inst1", b"inst2"])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(inner.stream_calls), 1)
+        self.assertEqual(len(inner.calls), 0)
+        _, url, headers, body = inner.stream_calls[0]
+        self.assertEqual(url, "https://dicom.example/studies")
+        self.assertIn("multipart/related", headers["Content-Type"])
+        self.assertNotIsInstance(body, (bytes, bytearray))
+        uploaded = b"".join(body)
+        self.assertIn(b"inst1", uploaded)
+        self.assertIn(b"inst2", uploaded)
 
 
 # ---------------------------------------------------------------------------

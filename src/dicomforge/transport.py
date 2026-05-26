@@ -45,7 +45,7 @@ from typing import Any, Dict, Iterable, Iterator, Optional, Tuple, Union
 from dicomforge.dicomweb import DicomwebResponse, Headers, MutableHeaders
 from dicomforge.errors import MissingBackendError
 
-Body = Union[bytes, bytearray, str, None]
+Body = Union[bytes, bytearray, str, Iterable[bytes], None]
 
 _DEFAULT_RETRYABLE_STATUSES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
@@ -430,11 +430,13 @@ class BearerTokenTransport:
 # ---------------------------------------------------------------------------
 
 
-def _encode_body(body: Body) -> Optional[bytes]:
+def _encode_body(body: Body) -> Union[bytes, Iterable[bytes], None]:
     if body is None:
         return None
     if isinstance(body, bytes):
         return body
     if isinstance(body, bytearray):
         return bytes(body)
-    return body.encode("utf-8")
+    if isinstance(body, str):
+        return body.encode("utf-8")
+    return body

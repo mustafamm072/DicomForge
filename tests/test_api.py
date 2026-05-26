@@ -359,7 +359,6 @@ class ValidateForSopClassTests(unittest.TestCase):
 
     def _ct_dataset(self, **overrides) -> DicomDataset:
         """Minimal complete CT Image Storage dataset."""
-        import numpy as np
         base = {
             # SOP Common
             Tag.SOPClassUID: "1.2.840.10008.5.1.4.1.1.2",

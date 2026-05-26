@@ -222,13 +222,6 @@ For a fuller commercial workflow, see
 
 ### Current limitations
 
-- **`stream_store_instances` buffers the full upload body** — The STOW-RS
-  streaming upload method (`DicomwebClient.stream_store_instances`) builds the
-  multipart body with `build_multipart_related_streaming` but then joins it into
-  a single `bytes` object before issuing the request. Large batch uploads will
-  still consume memory proportional to the total upload size. True streaming
-  STOW-RS is planned for a future release.
-
 - **`dicomforge.network` is not wire-compatible DIMSE** — The async networking
   module uses a lightweight JSON framing protocol, not the DICOM Upper Layer
   PDU wire format defined in PS3.8. It is not interoperable with real PACS

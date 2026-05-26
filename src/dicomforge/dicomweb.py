@@ -400,8 +400,9 @@ class DicomwebClient:
             (bytes(inst) for inst in instances),
             content_type=content_type,
         )
-        if hasattr(self.transport, "stream"):
-            streaming_resp = self.transport.stream(
+        stream = getattr(self.transport, "stream", None)
+        if stream is not None:
+            streaming_resp = stream(
                 "POST",
                 f"{self.base_url}/studies",
                 {
@@ -409,7 +410,7 @@ class DicomwebClient:
                     "Accept": "application/dicom+json",
                     "Content-Type": body_content_type,
                 },
-                b"".join(body_iter),
+                body_iter,
             )
             if not (200 <= streaming_resp.status_code < 300):
                 raise DicomwebError(
@@ -464,11 +465,12 @@ class DicomwebClient:
         chunk_size: int,
     ) -> Iterator[MultipartPart]:
         """Common streaming-or-fallback WADO retrieval."""
-        if hasattr(self.transport, "stream"):
+        stream = getattr(self.transport, "stream", None)
+        if stream is not None:
             merged: MutableHeaders = dict(self.headers)
             merged["Accept"] = accept
             url = f"{self.base_url}/{path}"
-            streaming_resp = self.transport.stream(
+            streaming_resp = stream(
                 "GET", url, merged, chunk_size=chunk_size
             )
             if not (200 <= streaming_resp.status_code < 300):

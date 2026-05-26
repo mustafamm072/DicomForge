@@ -35,7 +35,7 @@ pip install dicomforge[all]
 
 ## DICOM Capability Status
 
-| Capability | v0.6 Status |
+| Capability | v0.7 Status |
 |------------|-------------|
 | Typed tag normalization (75+ keywords) | ✅ Implemented |
 | Transfer syntax classification (15 syntaxes) | ✅ Implemented |
@@ -51,7 +51,7 @@ pip install dicomforge[all]
 | Async command lifecycle (JSON transport) | ✅ Implemented |
 | DICOM Upper Layer wire compatibility | 🔲 Planned (dicomforge-network, 1.0) |
 | DICOMweb query/client/multipart helpers | ✅ Implemented |
-| DICOMweb production transport (auth/retry) | 🔲 Planned (0.7) |
+| DICOMweb production transport (auth/retry) | ✅ Implemented |
 | pydicom ↔ DicomDataset conversion | ✅ via `dicomforge.adapt` |
 | Pillow image display helper | ✅ via `dicomforge.adapt` (requires Pillow) |
 | High-level `DicomFile` API | ✅ via `dicomforge.api` |
