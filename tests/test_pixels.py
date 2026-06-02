@@ -1,6 +1,7 @@
 import unittest
 
 from dicomforge import DicomDataset, FrameMetadata, Tag, VoiLut
+from dicomforge.codecs import CodecRegistry
 from dicomforge.errors import UnsupportedTransferSyntaxError
 from dicomforge.pixels import (
     PixelMetadataError,
@@ -174,7 +175,7 @@ class PixelCapabilityTests(unittest.TestCase):
             UnsupportedTransferSyntaxError,
             "compressed and no decoder is registered",
         ):
-            check_pixel_capability(dataset)
+            check_pixel_capability(dataset, registry=CodecRegistry())
 
     def test_pixel_data_length_check(self):
         metadata = FrameMetadata.from_dataset(native_ct_dataset())

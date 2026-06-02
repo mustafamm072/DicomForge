@@ -228,10 +228,18 @@ class CodecRegistryTests(unittest.TestCase):
         self.assertTrue(registry.supports(syntax))
 
     def test_default_registry_rejects_jpeg2000(self):
-        registry = default_registry()
-        syntax = TransferSyntax.from_uid(TransferSyntaxUID.JPEG2000Lossless)
-        with self.assertRaises(UnsupportedTransferSyntaxError):
-            registry.find(syntax)
+        import dicomforge.codecs as codecs
+
+        old_registry = codecs._DEFAULT_REGISTRY
+        codecs._DEFAULT_REGISTRY = None
+        try:
+            with patch.dict(sys.modules, {"pydicom": None}):
+                registry = default_registry()
+            syntax = TransferSyntax.from_uid(TransferSyntaxUID.JPEG2000Lossless)
+            with self.assertRaises(UnsupportedTransferSyntaxError):
+                registry.find(syntax)
+        finally:
+            codecs._DEFAULT_REGISTRY = old_registry
 
     def test_pydicom_pixel_codec_is_absent_without_backend(self):
         with patch.dict(sys.modules, {"pydicom": None}):
@@ -240,19 +248,55 @@ class CodecRegistryTests(unittest.TestCase):
             syntax = TransferSyntax.from_uid(TransferSyntaxUID.JPEG2000Lossless)
             self.assertFalse(registry.supports(syntax))
 
-    def test_default_registry_registers_pydicom_bridge_when_backend_is_detected(self):
+    def test_pydicom_pixel_codec_only_registers_supported_syntaxes(self):
+        pydicom = _FakePydicom([_FakePixelHandler({TransferSyntaxUID.RLELossless})])
+
+        with patch.dict(sys.modules, {"pydicom": pydicom}):
+            codec = pydicom_pixel_codec()
+            registry = pydicom_pixel_registry()
+
+        self.assertIsNotNone(codec)
+        jpeg2000 = TransferSyntax.from_uid(TransferSyntaxUID.JPEG2000Lossless)
+        rle = TransferSyntax.from_uid(TransferSyntaxUID.RLELossless)
+        self.assertFalse(registry.supports(jpeg2000))
+        self.assertTrue(registry.supports(rle))
+
+    def test_default_registry_registers_pydicom_bridge_when_handler_supports_syntax(self):
         import dicomforge.codecs as codecs
 
+        pydicom = _FakePydicom([_FakePixelHandler({TransferSyntaxUID.JPEG2000Lossless})])
         old_registry = codecs._DEFAULT_REGISTRY
         codecs._DEFAULT_REGISTRY = None
         try:
-            with patch.dict(sys.modules, {"pydicom": object()}):
+            with patch.dict(sys.modules, {"pydicom": pydicom}):
                 registry = default_registry()
             syntax = TransferSyntax.from_uid(TransferSyntaxUID.JPEG2000Lossless)
             codec = registry.find(syntax)
             self.assertEqual(codec.name, "pydicom-pixels")
         finally:
             codecs._DEFAULT_REGISTRY = old_registry
+
+
+class _FakePydicom:
+    def __init__(self, handlers):
+        self.config = _FakePydicomConfig(handlers)
+
+
+class _FakePydicomConfig:
+    def __init__(self, handlers):
+        self.pixel_data_handlers = handlers
+
+
+class _FakePixelHandler:
+    def __init__(self, syntaxes, *, available=True):
+        self._syntaxes = set(syntaxes)
+        self._available = available
+
+    def is_available(self):
+        return self._available
+
+    def supports_transfer_syntax(self, syntax_uid):
+        return syntax_uid in self._syntaxes
 
 
 if __name__ == "__main__":

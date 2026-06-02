@@ -35,10 +35,10 @@ dev = ["pydicom>=2.4", "pytest>=7", "ruff>=0.4", "mypy>=1.8", "numpy>=1.23", "pi
 all = ["pydicom>=2.4", "numpy>=1.23", "pillow>=10", "pynetdicom>=2.0", "requests>=2.28"]
 
 [project.urls]
-Homepage = "https://github.com/dicomforge/dicomforge"
-Repository = "https://github.com/dicomforge/dicomforge"
-Documentation = "https://github.com/dicomforge/dicomforge/tree/main/docs"
-Issues = "https://github.com/dicomforge/dicomforge/issues"
+Homepage = "https://github.com/mustafamm072/DicomForge"
+Repository = "https://github.com/mustafamm072/DicomForge"
+Documentation = "https://github.com/mustafamm072/DicomForge/tree/main/docs"
+Issues = "https://github.com/mustafamm072/DicomForge/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dicomforge"]

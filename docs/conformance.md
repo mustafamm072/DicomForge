@@ -116,8 +116,8 @@ Current scope:
 - verify native uncompressed PixelData byte length
 - apply simple modality rescale (Hounsfield Units) and VOI window helpers
 - photometric interpretation helpers (is_monochrome, needs_inversion)
-- automatically detect the optional pydicom pixel bridge in the default codec
-  registry when pydicom is installed
+- automatically detect available pydicom compressed pixel handlers in the
+  default codec registry
 - all pixel helper functions exported from `dicomforge` top level
 
 Out of scope today:

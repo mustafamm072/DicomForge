@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional
 
 from dicomforge.errors import UnsupportedTransferSyntaxError
 from dicomforge.transfer_syntax import TransferSyntax
@@ -76,10 +76,8 @@ def default_registry() -> CodecRegistry:
     """Return cached codec support detected in the current environment.
 
     The lightweight core always registers native uncompressed syntaxes.  When
-    pydicom is installed, a pydicom pixel bridge is also registered for common
-    encapsulated transfer syntaxes.  Actual compressed decoding still depends
-    on whichever pydicom pixel plugins are installed in the caller's
-    environment.
+    pydicom has an available pixel handler for a supported compressed transfer
+    syntax, a pydicom pixel bridge is also registered for that syntax.
     """
 
     global _DEFAULT_REGISTRY
@@ -112,15 +110,18 @@ def _register_optional_codecs(registry: CodecRegistry) -> None:
 
 
 def pydicom_pixel_codec() -> Optional[Codec]:
-    """Return the optional pydicom pixel bridge when pydicom is importable."""
+    """Return the optional pydicom pixel bridge when decoders are available."""
 
     try:
-        importlib.import_module("pydicom")
+        pydicom = importlib.import_module("pydicom")
     except ImportError:
+        return None
+    supported_syntaxes = _pydicom_supported_transfer_syntax_uids(pydicom)
+    if not supported_syntaxes:
         return None
     return Codec(
         name="pydicom-pixels",
-        transfer_syntax_uids=PYDICOM_PIXEL_TRANSFER_SYNTAX_UIDS,
+        transfer_syntax_uids=supported_syntaxes,
         can_decode=True,
         can_encode=False,
     )
@@ -130,9 +131,37 @@ def pydicom_pixel_registry() -> CodecRegistry:
     """Return a registry containing only the optional pydicom pixel bridge.
 
     This is useful for callers that want to compose their own registry without
-    mutating the cached default registry.  When pydicom is unavailable, the
-    returned registry is empty.
+    mutating the cached default registry.  When pydicom has no available
+    compressed pixel handlers, the returned registry is empty.
     """
 
     codec = pydicom_pixel_codec()
     return CodecRegistry([] if codec is None else [codec])
+
+
+def _pydicom_supported_transfer_syntax_uids(pydicom: Any) -> frozenset[str]:
+    config = getattr(pydicom, "config", None)
+    handlers = getattr(config, "pixel_data_handlers", ()) if config is not None else ()
+    supported = set()
+    for syntax_uid in PYDICOM_PIXEL_TRANSFER_SYNTAX_UIDS:
+        if any(_pydicom_handler_supports(handler, syntax_uid) for handler in handlers):
+            supported.add(syntax_uid)
+    return frozenset(supported)
+
+
+def _pydicom_handler_supports(handler: Any, syntax_uid: str) -> bool:
+    is_available = getattr(handler, "is_available", None)
+    if callable(is_available):
+        try:
+            if not is_available():
+                return False
+        except Exception:
+            return False
+
+    supports = getattr(handler, "supports_transfer_syntax", None)
+    if not callable(supports):
+        return False
+    try:
+        return bool(supports(syntax_uid))
+    except Exception:
+        return False

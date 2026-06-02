@@ -11,7 +11,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - `adapt.iter_pixel_frames` yields frame arrays one at a time for native
   multiframe datasets and reuses a single pydicom decode for compressed stacks.
 - The default `CodecRegistry` automatically registers a `pydicom-pixels` bridge
-  for common compressed transfer syntaxes when pydicom is importable.
+  only for compressed transfer syntaxes with an available pydicom pixel handler.
 - Signed 32-bit native pixel arrays are covered by the numpy adapter tests.
 
 ### Changed
