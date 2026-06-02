@@ -3,7 +3,7 @@
 All notable changes to DicomForge are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.0] — 2026-06-02
 
 ### Added
 - `adapt.pixel_array` now delegates compressed PixelData decode to pydicom when

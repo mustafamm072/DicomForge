@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dicomforge"
-version = "0.7.0"
+version = "0.8.0"
 description = "A lightweight, typed Python DICOM processing toolkit for medical imaging."
 readme = "README.md"
 requires-python = ">=3.9"
