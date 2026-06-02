@@ -66,17 +66,23 @@ Current scope:
 
 - `from_pydicom` / `to_pydicom` — bidirectional pydicom Dataset conversion,
   including nested sequences, Person Name, UID, DS, and IS value coercion
-- `pixel_array(frame, apply_rescale)` — numpy array from uncompressed PixelData
-  with dtype derived from BitsAllocated and PixelRepresentation
+- `pixel_array(frame, apply_rescale)` — numpy array from native uncompressed
+  PixelData with dtype derived from BitsAllocated and PixelRepresentation;
+  compressed PixelData is delegated to pydicom when pydicom and the relevant
+  pydicom pixel plugin are installed
+- `iter_pixel_frames(apply_rescale)` — frame-by-frame numpy array iterator for
+  native multiframe data, with compressed stacks delegated once to pydicom
 - `to_pil_image(frame, apply_window)` — PIL Image from a DICOM frame with
-  automatic VOI windowing; MONOCHROME1 displayed correctly (inverted)
+  automatic VOI windowing; MONOCHROME1 displayed correctly (inverted), and
+  RGB/YBR colour display conversion for supported arrays
 - `to_json` / `from_json` — DICOM JSON Model round-trip via `dicomforge.dicomweb`
 - `from_pynetdicom_event` — extract DicomDataset from a pynetdicom event payload
 
 Out of scope today:
 
-- compressed pixel decode (requires pydicom codec backend)
-- colour space conversion beyond basic RGB/YBR display
+- bundled compressed pixel codecs; DICOMForge does not vendor JPEG, JPEG-LS,
+  JPEG 2000, or RLE decoders
+- Pillow JPEG preview encode/decode bridge
 - pynetdicom association management (use `pynetdicom` directly; `adapt` only
   bridges the dataset representation)
 
@@ -110,12 +116,13 @@ Current scope:
 - verify native uncompressed PixelData byte length
 - apply simple modality rescale (Hounsfield Units) and VOI window helpers
 - photometric interpretation helpers (is_monochrome, needs_inversion)
+- automatically detect the optional pydicom pixel bridge in the default codec
+  registry when pydicom is installed
 - all pixel helper functions exported from `dicomforge` top level
 
 Out of scope today:
 
-- compressed pixel decoding (planned for 0.8 via `adapt.pixel_array`)
-- color space conversion
+- bundled compressed pixel codecs
 - overlays and presentation state behavior
 
 ## De-Identification

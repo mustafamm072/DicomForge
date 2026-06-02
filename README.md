@@ -15,6 +15,7 @@ This repository is intentionally starting with a small, solid core:
 - de-identification profiles, deterministic UID remapping, and audit reports
 - pixel metadata and safety checks
 - VOI window, rescale, and photometric interpretation helpers
+- optional pydicom-backed compressed pixel decode and frame iteration
 - async networking primitives for association lifecycle and DIMSE-style commands
 - DICOMweb query, retrieval, upload, and multipart helpers
 - optional `pydicom` IO backend
@@ -61,6 +62,8 @@ Use DICOMForge when you need:
 
 - typed, dependency-light DICOM metadata handling
 - pixel metadata validation before decoding or processing
+- pydicom-backed pixel extraction for compressed syntaxes when optional codec
+  plugins are installed
 - de-identification planning with deterministic UID remapping and audit reports
 - pydicom-backed file IO behind a smaller application API
 - DICOMweb URL/query, DICOM JSON, STOW multipart, and response parsing helpers
@@ -228,9 +231,10 @@ For a fuller commercial workflow, see
   systems over the wire. Wire-compatible DIMSE via a `pynetdicom` bridge is
   planned for a `dicomforge-network` package in a future release.
 
-- **Compressed pixel access requires pydicom and codec extras** — `adapt.pixel_array`
-  only decodes uncompressed transfer syntaxes. Compressed formats (JPEG, JPEG-LS,
-  JPEG 2000, RLE) are planned for v0.8.
+- **Compressed pixel access is delegated to pydicom** — `adapt.pixel_array`
+  can decode compressed transfer syntaxes when pydicom and the relevant pydicom
+  pixel plugin are installed. DICOMForge does not bundle JPEG, JPEG-LS,
+  JPEG 2000, or RLE codec implementations.
 
 ## License
 

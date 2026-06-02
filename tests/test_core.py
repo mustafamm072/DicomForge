@@ -1,8 +1,10 @@
 import unittest
+import sys
+from unittest.mock import patch
 
 from dicomforge import AnonymizationAction, AnonymizationPlan, DicomDataset, Tag, TransferSyntax
 from dicomforge import generate_uid, is_valid_uid
-from dicomforge.codecs import default_registry
+from dicomforge.codecs import default_registry, pydicom_pixel_codec, pydicom_pixel_registry
 from dicomforge.errors import UnsupportedTransferSyntaxError
 from dicomforge.uids import TransferSyntaxUID
 
@@ -230,6 +232,27 @@ class CodecRegistryTests(unittest.TestCase):
         syntax = TransferSyntax.from_uid(TransferSyntaxUID.JPEG2000Lossless)
         with self.assertRaises(UnsupportedTransferSyntaxError):
             registry.find(syntax)
+
+    def test_pydicom_pixel_codec_is_absent_without_backend(self):
+        with patch.dict(sys.modules, {"pydicom": None}):
+            self.assertIsNone(pydicom_pixel_codec())
+            registry = pydicom_pixel_registry()
+            syntax = TransferSyntax.from_uid(TransferSyntaxUID.JPEG2000Lossless)
+            self.assertFalse(registry.supports(syntax))
+
+    def test_default_registry_registers_pydicom_bridge_when_backend_is_detected(self):
+        import dicomforge.codecs as codecs
+
+        old_registry = codecs._DEFAULT_REGISTRY
+        codecs._DEFAULT_REGISTRY = None
+        try:
+            with patch.dict(sys.modules, {"pydicom": object()}):
+                registry = default_registry()
+            syntax = TransferSyntax.from_uid(TransferSyntaxUID.JPEG2000Lossless)
+            codec = registry.find(syntax)
+            self.assertEqual(codec.name, "pydicom-pixels")
+        finally:
+            codecs._DEFAULT_REGISTRY = old_registry
 
 
 if __name__ == "__main__":

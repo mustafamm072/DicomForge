@@ -1,12 +1,16 @@
 """Tests for the adopt.py integration adapters."""
 
 import json
+import sys
 import unittest
+from unittest.mock import patch
 
 from dicomforge.adapt import from_json, to_json
+from dicomforge.codecs import Codec, CodecRegistry
 from dicomforge.dataset import DicomDataset
 from dicomforge.errors import MissingBackendError
 from dicomforge.tags import Tag
+from dicomforge.uids import TransferSyntaxUID
 
 
 class JsonAdapterTests(unittest.TestCase):
@@ -212,6 +216,36 @@ class NumpyAdapterTests(unittest.TestCase):
         self.assertAlmostEqual(float(arr[0, 0]), -1024.0)
         self.assertAlmostEqual(float(arr[0, 1]), -924.0)
 
+    def test_pixel_array_signed_int32(self):
+        self._skip_if_no_numpy()
+        import numpy as np
+
+        from dicomforge.adapt import pixel_array
+
+        rows, cols = 1, 3
+        values = np.array([-1024, 0, 2048], dtype=np.int32)
+        ds = DicomDataset(
+            {
+                Tag.TransferSyntaxUID: TransferSyntaxUID.ExplicitVRLittleEndian,
+                Tag.Rows: rows,
+                Tag.Columns: cols,
+                Tag.SamplesPerPixel: 1,
+                Tag.BitsAllocated: 32,
+                Tag.BitsStored: 32,
+                Tag.HighBit: 31,
+                Tag.PixelRepresentation: 1,
+                Tag.PhotometricInterpretation: "MONOCHROME2",
+                Tag.PixelData: values.tobytes(),
+            }
+        )
+
+        arr = pixel_array(ds)
+
+        self.assertEqual(arr.dtype, np.int32)
+        self.assertEqual(arr.shape, (rows, cols))
+        self.assertEqual(int(arr[0, 0]), -1024)
+        self.assertEqual(int(arr[0, 2]), 2048)
+
     def test_pixel_array_missing_numpy_raises(self):
         import sys
         from unittest.mock import patch
@@ -222,6 +256,70 @@ class NumpyAdapterTests(unittest.TestCase):
         with patch.dict(sys.modules, {"numpy": None}):
             with self.assertRaises(MissingBackendError):
                 pixel_array(ds)
+
+    def test_pixel_array_delegates_compressed_decode_to_pydicom(self):
+        from dicomforge.adapt import pixel_array
+
+        frames = [_FakeArray("frame-0"), _FakeArray("frame-1")]
+        raw = _FakePydicomDataset(_FakeArrayStack(frames))
+
+        with patch.dict(sys.modules, {"numpy": _FakeNumpy()}):
+            with patch("dicomforge.adapt.to_pydicom", return_value=raw) as convert:
+                result = pixel_array(
+                    _compressed_multiframe_dataset(),
+                    frame=1,
+                    registry=_compressed_registry(),
+                )
+
+        self.assertIs(result, frames[1])
+        self.assertEqual(raw.file_meta.TransferSyntaxUID, TransferSyntaxUID.JPEG2000Lossless)
+        convert.assert_called_once()
+
+    def test_pixel_array_wraps_pydicom_decode_failures(self):
+        from dicomforge.adapt import pixel_array
+        from dicomforge.errors import UnsupportedTransferSyntaxError
+
+        raw = _FailingPydicomDataset()
+
+        with patch.dict(sys.modules, {"numpy": _FakeNumpy()}):
+            with patch("dicomforge.adapt.to_pydicom", return_value=raw):
+                with self.assertRaisesRegex(UnsupportedTransferSyntaxError, "pydicom"):
+                    pixel_array(
+                        _compressed_multiframe_dataset(),
+                        registry=_compressed_registry(),
+                    )
+
+    def test_iter_pixel_frames_decodes_compressed_stack_once(self):
+        from dicomforge.adapt import iter_pixel_frames
+
+        frames = [_FakeArray("frame-0"), _FakeArray("frame-1")]
+        raw = _FakePydicomDataset(_FakeArrayStack(frames))
+
+        with patch.dict(sys.modules, {"numpy": _FakeNumpy()}):
+            with patch("dicomforge.adapt.to_pydicom", return_value=raw) as convert:
+                result = list(
+                    iter_pixel_frames(
+                        _compressed_multiframe_dataset(),
+                        registry=_compressed_registry(),
+                    )
+                )
+
+        self.assertEqual(result, frames)
+        convert.assert_called_once()
+
+    def test_pixel_array_rejects_out_of_range_frame_before_decode(self):
+        from dicomforge.adapt import pixel_array
+
+        with patch.dict(sys.modules, {"numpy": _FakeNumpy()}):
+            with patch("dicomforge.adapt.to_pydicom") as convert:
+                with self.assertRaises(IndexError):
+                    pixel_array(
+                        _compressed_multiframe_dataset(),
+                        frame=2,
+                        registry=_compressed_registry(),
+                    )
+
+        convert.assert_not_called()
 
 
 class PilAdapterTests(unittest.TestCase):
@@ -327,6 +425,78 @@ class PilAdapterTests(unittest.TestCase):
         self.assertGreater(r, 200)
         self.assertGreater(g, 200)
         self.assertGreater(b, 200)
+
+
+class _FakeNumpy:
+    float64 = "float64"
+
+    def asarray(self, value):
+        return value
+
+
+class _FakeArray:
+    def __init__(self, name):
+        self.name = name
+
+    def copy(self):
+        return self
+
+    def __repr__(self):
+        return f"_FakeArray({self.name!r})"
+
+
+class _FakeArrayStack:
+    def __init__(self, frames):
+        self._frames = frames
+
+    def __getitem__(self, index):
+        return self._frames[index]
+
+    def copy(self):
+        return self
+
+
+class _FakePydicomDataset:
+    def __init__(self, pixel_array):
+        self.file_meta = None
+        self.pixel_array = pixel_array
+
+
+class _FailingPydicomDataset:
+    file_meta = None
+
+    @property
+    def pixel_array(self):
+        raise RuntimeError("codec plugin missing")
+
+
+def _compressed_registry():
+    return CodecRegistry(
+        [
+            Codec(
+                name="test-pydicom",
+                transfer_syntax_uids=frozenset({TransferSyntaxUID.JPEG2000Lossless}),
+            )
+        ]
+    )
+
+
+def _compressed_multiframe_dataset():
+    return DicomDataset(
+        {
+            Tag.TransferSyntaxUID: TransferSyntaxUID.JPEG2000Lossless,
+            Tag.Rows: 1,
+            Tag.Columns: 1,
+            Tag.SamplesPerPixel: 1,
+            Tag.BitsAllocated: 16,
+            Tag.BitsStored: 16,
+            Tag.HighBit: 15,
+            Tag.PixelRepresentation: 0,
+            Tag.PhotometricInterpretation: "MONOCHROME2",
+            Tag.NumberOfFrames: 2,
+            Tag.PixelData: b"\xfe\xff\x00\xe0",
+        }
+    )
 
 
 if __name__ == "__main__":

@@ -3,6 +3,20 @@
 All notable changes to DicomForge are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `adapt.pixel_array` now delegates compressed PixelData decode to pydicom when
+  pydicom and the relevant pydicom pixel plugin are installed.
+- `adapt.iter_pixel_frames` yields frame arrays one at a time for native
+  multiframe datasets and reuses a single pydicom decode for compressed stacks.
+- The default `CodecRegistry` automatically registers a `pydicom-pixels` bridge
+  for common compressed transfer syntaxes when pydicom is importable.
+- Signed 32-bit native pixel arrays are covered by the numpy adapter tests.
+
+### Changed
+- Native pixel dtype mapping now respects Explicit VR Big Endian byte order.
+
 ## [0.7.0] — 2026-05-16
 
 ### Added

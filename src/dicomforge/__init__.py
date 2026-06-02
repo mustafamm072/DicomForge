@@ -11,8 +11,19 @@ from dicomforge.anonymize import (
     Rule,
     UidRemapper,
 )
-from dicomforge.api import DicomFile, batch_anonymize, quick_anonymize, validate_dataset, validate_for_sop_class
-from dicomforge.codecs import Codec, CodecRegistry
+from dicomforge.api import (
+    DicomFile,
+    batch_anonymize,
+    quick_anonymize,
+    validate_dataset,
+    validate_for_sop_class,
+)
+from dicomforge.codecs import (
+    Codec,
+    CodecRegistry,
+    pydicom_pixel_codec,
+    pydicom_pixel_registry,
+)
 from dicomforge.dataset import DicomDataset
 from dicomforge.dicomweb import (
     DicomwebClient,
@@ -103,6 +114,8 @@ __all__ = [
     # Codecs
     "Codec",
     "CodecRegistry",
+    "pydicom_pixel_codec",
+    "pydicom_pixel_registry",
     # Core types
     "DicomDataset",
     "Tag",
