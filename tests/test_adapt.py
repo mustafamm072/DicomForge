@@ -351,6 +351,26 @@ class PilAdapterTests(unittest.TestCase):
             }
         )
 
+    def _make_monochrome_dataset(self, pixels: "Any") -> DicomDataset:
+        import numpy as np
+        from dicomforge.uids import TransferSyntaxUID
+
+        rows, cols = pixels.shape[:2]
+        return DicomDataset(
+            {
+                Tag.TransferSyntaxUID: TransferSyntaxUID.ExplicitVRLittleEndian,
+                Tag.Rows: rows,
+                Tag.Columns: cols,
+                Tag.SamplesPerPixel: 1,
+                Tag.BitsAllocated: 8,
+                Tag.BitsStored: 8,
+                Tag.HighBit: 7,
+                Tag.PixelRepresentation: 0,
+                Tag.PhotometricInterpretation: "MONOCHROME2",
+                Tag.PixelData: pixels.astype(np.uint8).tobytes(),
+            }
+        )
+
     def test_rgb_image_returned_unchanged(self):
         self._skip_if_no_pixels()
         import numpy as np
@@ -425,6 +445,55 @@ class PilAdapterTests(unittest.TestCase):
         self.assertGreater(r, 200)
         self.assertGreater(g, 200)
         self.assertGreater(b, 200)
+
+    def test_to_jpeg_preview_returns_decodable_jpeg_bytes(self):
+        self._skip_if_no_pixels()
+        import numpy as np
+        from PIL import Image
+
+        from dicomforge.adapt import from_jpeg_preview, to_jpeg_preview
+
+        pixels = np.array(
+            [
+                [0, 64, 128, 255],
+                [255, 128, 64, 0],
+            ],
+            dtype=np.uint8,
+        )
+        ds = self._make_monochrome_dataset(pixels)
+
+        preview = to_jpeg_preview(ds, quality=80, apply_window=False)
+        decoded = from_jpeg_preview(preview)
+
+        self.assertTrue(preview.startswith(b"\xff\xd8"))
+        self.assertIsInstance(decoded, Image.Image)
+        self.assertEqual(decoded.format, None)
+        self.assertEqual(decoded.size, (4, 2))
+        self.assertIn(decoded.mode, {"L", "RGB"})
+
+    def test_from_jpeg_preview_can_convert_mode(self):
+        self._skip_if_no_pixels()
+        import numpy as np
+
+        from dicomforge.adapt import from_jpeg_preview, to_jpeg_preview
+
+        ds = self._make_monochrome_dataset(np.array([[0, 255]], dtype=np.uint8))
+        preview = to_jpeg_preview(ds, apply_window=False)
+
+        decoded = from_jpeg_preview(preview, mode="RGB")
+
+        self.assertEqual(decoded.mode, "RGB")
+        self.assertEqual(decoded.size, (2, 1))
+
+    def test_to_jpeg_preview_rejects_invalid_quality(self):
+        self._skip_if_no_pixels()
+        import numpy as np
+
+        from dicomforge.adapt import to_jpeg_preview
+
+        ds = self._make_monochrome_dataset(np.array([[0]], dtype=np.uint8))
+        with self.assertRaisesRegex(ValueError, "quality"):
+            to_jpeg_preview(ds, quality=0)
 
 
 class _FakeNumpy:

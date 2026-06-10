@@ -115,22 +115,24 @@ Status: implemented in `dicomforge.transport` with comprehensive tests.
   gracefully to buffered transports
 - All three transport types compose cleanly and are tested with mock transports
 
-## 0.8 Compressed Pixel Access
+## 0.8 Compressed Pixel Access ✅
 
 Target: numpy arrays from compressed PixelData without leaving the library.
 
-Status: in progress. The first adoption-layer slice is implemented without
-adding mandatory dependencies: available pydicom pixel handlers are detected
-automatically for common compressed transfer syntaxes, `adapt.pixel_array`
-delegates compressed decode to pydicom when the required pixel plugin is installed,
-`adapt.iter_pixel_frames` provides frame-by-frame access, and signed 32-bit
-native pixels are covered. Pillow JPEG preview generation remains planned.
+Status: implemented in the adoption layer without adding mandatory
+dependencies. Available pydicom pixel handlers are detected automatically for
+common compressed transfer syntaxes, `adapt.pixel_array` delegates compressed
+decode to pydicom when the required pixel plugin is installed,
+`adapt.iter_pixel_frames` provides frame-by-frame access, signed 32-bit native
+pixels are covered, and Pillow-backed JPEG preview helpers support web/API
+display workflows.
 
 - ✅ pydicom-backed compressed pixel decode (JPEG, JPEG-LS, JPEG 2000, RLE) via
   `adapt.pixel_array` when pydicom and its codec extras are installed
 - ✅ `CodecRegistry` integration: codec registered automatically when a pydicom
   handler is available
-- Pillow encode/decode bridge for 8-bit JPEG preview generation
+- ✅ Pillow encode/decode bridge for 8-bit JPEG preview generation via
+  `adapt.to_jpeg_preview` and `adapt.from_jpeg_preview`
 - ✅ Native multiframe pixel iterator to avoid loading all frames into memory
 - ✅ Signed 32-bit pixel support in numpy adapter
 

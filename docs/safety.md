@@ -26,3 +26,10 @@ handling, longitudinal UID strategy, and regulatory sign-off.
 The in-core networking module is for API shape, lifecycle, and backpressure
 testing. It is not wire-compatible with PACS systems. Use a DICOM Upper Layer
 implementation for real DIMSE interoperability.
+
+## Pixel Previews
+
+`adapt.to_pil_image` and `adapt.to_jpeg_preview` are display and integration
+helpers. JPEG previews are lossy 8-bit renderings after optional windowing and
+photometric conversion; do not use them as diagnostic-quality derived images or
+as a substitute for validated modality, presentation state, and viewer behavior.

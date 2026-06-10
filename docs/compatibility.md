@@ -24,7 +24,7 @@ No deprecated stdlib modules are used.  `asyncio` calls use `get_running_loop()`
 | pydicom ≥ 2.4 | `pip install dicomforge[pydicom]` | File IO, conversion, compressed pixel bridge |
 | pydicom ≥ 3.0 | same | Supported — uses `pydicom.dcmwrite()` when available |
 | numpy ≥ 1.23 | `pip install dicomforge[pixels]` | Pixel arrays and frame iteration |
-| Pillow ≥ 10 | `pip install dicomforge[pixels]` | `adapt.to_pil_image` display helper |
+| Pillow ≥ 10 | `pip install dicomforge[pixels]` | `adapt.to_pil_image`, JPEG preview helpers |
 | pynetdicom ≥ 2.0 | `pip install dicomforge[network]` | `adapt.from_pynetdicom_event` bridge |
 
 Install everything at once:
@@ -45,6 +45,7 @@ pip install dicomforge[all]
 | Pixel array extraction — compressed | ✅ via pydicom bridge plus codec plugins |
 | Multiframe pixel iteration | ✅ `adapt.iter_pixel_frames` |
 | Color-space conversion | ✅ RGB/YBR display conversion in `to_pil_image` |
+| JPEG preview generation | ✅ `adapt.to_jpeg_preview` / `adapt.from_jpeg_preview` |
 | pydicom-backed read/write | ✅ Implemented (pydicom 2.x + 3.x) |
 | Starter de-identification plan (48 rules) | ✅ Implemented |
 | Full DICOM PS3.15 profile | 🔲 Planned (1.0) |
@@ -75,6 +76,7 @@ planned milestone before they are suitable.
 | DICOM JSON round-trip | ✅ | `adapt.to_json` / `adapt.from_json` |
 | Uncompressed pixel array extraction | ✅ | `adapt.pixel_array` (requires numpy) |
 | Display-ready image from DICOM | ✅ | `adapt.to_pil_image` (numpy + Pillow) |
+| JPEG thumbnails/API previews | ✅ | `adapt.to_jpeg_preview`; lossy 8-bit previews only |
 | Compressed pixel decode | ⚠️ | Requires pydicom plus a codec plugin |
 | Wire-compatible DIMSE | ❌ | Planned `dicomforge-network`; use `pynetdicom` now |
 | Regulated clinical workflows | ⚠️ | Not a medical device; site validation required |

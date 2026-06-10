@@ -75,6 +75,11 @@ Current scope:
 - `to_pil_image(frame, apply_window)` — PIL Image from a DICOM frame with
   automatic VOI windowing; MONOCHROME1 displayed correctly (inverted), and
   RGB/YBR colour display conversion for supported arrays
+- `to_jpeg_preview(frame, quality, apply_window)` — 8-bit JPEG preview bytes
+  for thumbnails, web viewers, and API responses; uses the same pixel safety
+  and optional backend path as `to_pil_image`
+- `from_jpeg_preview(data, mode)` — load JPEG preview bytes back into a PIL
+  Image for validation and lightweight viewer pipelines
 - `to_json` / `from_json` — DICOM JSON Model round-trip via `dicomforge.dicomweb`
 - `from_pynetdicom_event` — extract DicomDataset from a pynetdicom event payload
 
@@ -82,7 +87,7 @@ Out of scope today:
 
 - bundled compressed pixel codecs; DICOMForge does not vendor JPEG, JPEG-LS,
   JPEG 2000, or RLE decoders
-- Pillow JPEG preview encode/decode bridge
+- diagnostic-quality lossy image derivation from JPEG previews
 - pynetdicom association management (use `pynetdicom` directly; `adapt` only
   bridges the dataset representation)
 
@@ -118,12 +123,14 @@ Current scope:
 - photometric interpretation helpers (is_monochrome, needs_inversion)
 - automatically detect available pydicom compressed pixel handlers in the
   default codec registry
+- generate 8-bit JPEG preview bytes through the optional Pillow adoption layer
 - all pixel helper functions exported from `dicomforge` top level
 
 Out of scope today:
 
 - bundled compressed pixel codecs
 - overlays and presentation state behavior
+- clinical interpretation from display previews
 
 ## De-Identification
 
@@ -191,11 +198,11 @@ Current scope:
   inline binary
 - multipart/related parsing for buffered response bodies
 - injectable transport protocol plus a standard-library `urllib` transport
+- optional `dicomforge.transport` helpers for requests-backed connection
+  pooling, bearer-token auth, retry/backoff, TLS client certificates, and
+  streaming multipart retrieve/store workflows
 
 Out of scope today:
 
-- authentication helpers (implement in a custom `DicomwebTransport`)
-- retry and timeout policy beyond transport configuration
-- chunk-by-chunk response streaming from sockets
 - real PACS/VNA integration-test compatibility guarantees
 - complete DICOM JSON Model coverage for every VR edge case

@@ -32,11 +32,17 @@ Display a DICOM frame via Pillow::
 
     from dicomforge.adapt import to_pil_image
     to_pil_image(ds_forge).show()
+
+Create a lightweight JPEG preview for web/API responses::
+
+    from dicomforge.adapt import to_jpeg_preview
+    preview_bytes = to_jpeg_preview(ds_forge, quality=85)
 """
 
 from __future__ import annotations
 
 import json as _json
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Iterator, Optional, Union
 
@@ -378,6 +384,104 @@ def to_pil_image(
         span = vmax - vmin or 1.0
         arr = ((arr.astype(np.float64) - vmin) / span * 255).clip(0, 255).astype(np.uint8)
     return Image.fromarray(arr, mode="RGB")
+
+
+def to_jpeg_preview(
+    dataset: DicomDataset,
+    *,
+    frame: int = 0,
+    quality: int = 85,
+    apply_window: bool = True,
+    window_center: Optional[float] = None,
+    window_width: Optional[float] = None,
+    progressive: bool = False,
+    optimize: bool = False,
+) -> bytes:
+    """Render one DICOM frame as 8-bit JPEG preview bytes.
+
+    This is intended for thumbnails, web viewer previews, and API responses.
+    It reuses :func:`to_pil_image`, so native uncompressed pixels are handled
+    directly and compressed syntaxes are decoded through pydicom when the
+    relevant optional codec plugin is installed.  The core package still has no
+    mandatory NumPy, Pillow, pydicom, or codec dependency.
+
+    Parameters
+    ----------
+    dataset:
+        Dataset containing ``PixelData`` and required pixel metadata tags.
+    frame:
+        Zero-based frame index.
+    quality:
+        Pillow JPEG quality from 1 to 95.  Defaults to 85, which is a practical
+        preview default without paying the size cost of near-lossless output.
+    apply_window:
+        Apply VOI windowing for monochrome images before encoding.
+    window_center:
+        Override ``WindowCenter`` when *apply_window* is true.
+    window_width:
+        Override ``WindowWidth`` when *apply_window* is true.
+    progressive:
+        Write a progressive JPEG.  Defaults to ``False`` for faster encoding.
+    optimize:
+        Ask Pillow to optimize Huffman tables.  Defaults to ``False`` because
+        it can add CPU cost in request/response preview paths.
+
+    Raises
+    ------
+    MissingBackendError
+        If Pillow or NumPy is not installed.
+    ValueError
+        If *quality* is outside Pillow's normal 1..95 range.
+    """
+
+    if quality < 1 or quality > 95:
+        raise ValueError(f"JPEG quality must be between 1 and 95, got {quality}.")
+
+    image = to_pil_image(
+        dataset,
+        frame=frame,
+        apply_window=apply_window,
+        window_center=window_center,
+        window_width=window_width,
+    )
+    if image.mode not in {"L", "RGB"}:
+        image = image.convert("RGB")
+
+    output = BytesIO()
+    image.save(
+        output,
+        format="JPEG",
+        quality=quality,
+        progressive=progressive,
+        optimize=optimize,
+    )
+    return output.getvalue()
+
+
+def from_jpeg_preview(data: bytes, *, mode: Optional[str] = None) -> Any:
+    """Decode JPEG preview bytes to a loaded ``PIL.Image.Image``.
+
+    The returned image is detached from the input byte stream, so callers can
+    inspect or reuse it after this function returns.  Pass *mode* (for example
+    ``"RGB"`` or ``"L"``) to force a Pillow mode conversion.
+
+    Raises
+    ------
+    MissingBackendError
+        If Pillow is not installed.
+    """
+
+    try:
+        from PIL import Image  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise MissingBackendError(
+            "from_jpeg_preview() requires Pillow. "
+            "Install with `pip install dicomforge[pixels]`."
+        ) from exc
+
+    with Image.open(BytesIO(data)) as image:
+        loaded = image.copy()
+    return loaded.convert(mode) if mode is not None else loaded
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,6 @@
 from dicomforge import DicomDataset, Tag
+from dicomforge.adapt import to_jpeg_preview
+from dicomforge.errors import MissingBackendError
 from dicomforge.pixels import check_pixel_capability
 from dicomforge.uids import TransferSyntaxUID
 
@@ -20,3 +22,9 @@ dataset = DicomDataset(
 
 capability = check_pixel_capability(dataset)
 print(capability)
+
+try:
+    preview = to_jpeg_preview(dataset, quality=85, apply_window=False)
+    print(f"JPEG preview bytes: {len(preview)}")
+except MissingBackendError:
+    print("Install dicomforge[pixels] to generate JPEG previews.")

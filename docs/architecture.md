@@ -17,9 +17,15 @@ heavy capabilities are optional plugins.
   pixel helpers
 - `dicomforge.anonymize`: de-identification profiles, UID remapping, private
   tag policy, and audit reports
+- `dicomforge.adapt`: optional adapters for pydicom, NumPy arrays, Pillow
+  images/JPEG previews, DICOM JSON, and pynetdicom events
+- `dicomforge.api`: higher-level lazy file and batch helpers for application
+  code
 - `dicomforge.io`: optional backend-based file IO
 - `dicomforge.network`: dependency-free association and DIMSE-style command primitives
 - `dicomforge.dicomweb`: dependency-free DICOMweb URL, transport, JSON, and multipart helpers
+- `dicomforge.transport`: optional DICOMweb HTTP transports with requests,
+  bearer-token auth, retry, and streaming helpers
 - `dicomforge.uids`: selected standard UID and DIMSE status constants
 
 ## De-identification stance
@@ -44,10 +50,10 @@ document the profile options used for each data release.
 
 ## Optional packages planned
 
-- `dicomforge-pixels`: NumPy/Pillow pixel transforms and bulk array operations
+- `dicomforge-pixels`: advanced NumPy/Pillow pixel transforms and bulk array operations
 - `dicomforge-codecs-openjpeg`: JPEG 2000 codec bridge
 - `dicomforge-network`: full DICOM Upper Layer and DIMSE services
-- `dicomforge-dicomweb`: optional auth, retry, and integration-tested DICOMweb transports
+- `dicomforge-dicomweb`: curated integration-tested DICOMweb PACS/VNA profiles
 - `dicomforge-iods`: validated high-level IOD builders
 
 ## Lessons from existing libraries

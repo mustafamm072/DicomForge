@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use DicomForge in your research, please cite it as below."
+type: software
+title: "DicomForge: A Lightweight Python Toolkit for Typed DICOM Processing and Medical Imaging Workflows"
+version: 0.8.1
+date-released: "2026-06-10"
+license: MIT
+repository-code: "https://github.com/mustafamm072/DicomForge"
+url: "https://github.com/mustafamm072/DicomForge"
+abstract: >-
+  DicomForge is a typed, dependency-free Python library for DICOM processing.
+  It provides tag normalization, transfer syntax classification, pixel metadata
+  validation, auditable de-identification with deterministic UID remapping,
+  DICOMweb client helpers, and an adoption layer for pydicom, NumPy, and Pillow
+  integration — designed for both hobby medical imaging projects and commercial
+  production software.
+keywords:
+  - DICOM
+  - medical imaging
+  - radiology
+  - de-identification
+  - DICOMweb
+  - healthcare
+  - Python
+authors:
+  - family-names: Merchant
+    given-names: Mustufa
+    affiliation: "Kub Technologies Inc."
+preferred-citation:
+  type: article
+  title: "DicomForge: A Lightweight Python Toolkit for Typed DICOM Processing and Medical Imaging Workflows"
+  authors:
+    - family-names: Merchant
+      given-names: Mustufa
+      affiliation: "Kub Technologies Inc."
+  journal: "Journal of Open Source Software"
+  year: 2026
+  url: "https://github.com/mustafamm072/DicomForge"

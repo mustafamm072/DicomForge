@@ -3,6 +3,21 @@
 All notable changes to DicomForge are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] — 2026-06-10
+
+### Added
+- `adapt.to_jpeg_preview` renders one DICOM frame to 8-bit JPEG preview bytes
+  using the existing safe pixel path and optional Pillow backend.
+- `adapt.from_jpeg_preview` decodes preview bytes back to a loaded PIL Image for
+  preview validation, tests, and lightweight viewer pipelines.
+- JPEG preview tests covering byte generation, mode conversion, and quality
+  validation.
+
+### Changed
+- 0.8 compressed pixel access is now documented as complete: compressed array
+  decode remains delegated to pydicom codec plugins, while display/export
+  previews are handled through the optional Pillow bridge.
+
 ## [0.8.0] — 2026-06-02
 
 ### Added

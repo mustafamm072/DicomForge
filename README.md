@@ -1,6 +1,15 @@
 # DICOMForge
 
 [![DOI](https://zenodo.org/badge/1222011062.svg)](https://doi.org/10.5281/zenodo.20192747)
+[![CI](https://github.com/mustafamm072/DicomForge/actions/workflows/ci.yml/badge.svg)](https://github.com/mustafamm072/DicomForge/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)
+![Status](https://img.shields.io/badge/status-beta-yellow)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Core](https://img.shields.io/badge/core-dependency--free-brightgreen)
+![DICOMweb](https://img.shields.io/badge/DICOMweb-QIDO%20%7C%20WADO%20%7C%20STOW-blueviolet)
+
+`dicom` · `medical-imaging` · `radiology` · `pacs` · `dicomweb` ·
+`de-identification` · `pixel-data` · `healthcare-ai` · `python`
 
 DICOMForge is a Python DICOM processing library for medical imaging
 applications. The goal is a lightweight core with typed, predictable APIs,
@@ -16,6 +25,7 @@ This repository is intentionally starting with a small, solid core:
 - pixel metadata and safety checks
 - VOI window, rescale, and photometric interpretation helpers
 - optional pydicom-backed compressed pixel decode and frame iteration
+- optional Pillow-backed 8-bit JPEG preview generation
 - async networking primitives for association lifecycle and DIMSE-style commands
 - DICOMweb query, retrieval, upload, and multipart helpers
 - optional `pydicom` IO backend
@@ -64,6 +74,8 @@ Use DICOMForge when you need:
 - pixel metadata validation before decoding or processing
 - pydicom-backed pixel extraction for compressed syntaxes when optional codec
   plugins are installed
+- display-ready PIL images and JPEG preview bytes for lightweight viewer/API
+  workflows
 - de-identification planning with deterministic UID remapping and audit reports
 - pydicom-backed file IO behind a smaller application API
 - DICOMweb URL/query, DICOM JSON, STOW multipart, and response parsing helpers
@@ -86,9 +98,12 @@ dicomforge.transfer_syntax transfer syntax classification
 dicomforge.codecs          codec capability registry
 dicomforge.pixels          pixel metadata safety checks and small value helpers
 dicomforge.anonymize       starter de-identification plans and audit reports
+dicomforge.adapt           pydicom, numpy, Pillow, JSON, and pynetdicom adapters
+dicomforge.api             lazy file wrapper and one-call application helpers
 dicomforge.io              optional pydicom read/write adapter
 dicomforge.network         async command lifecycle primitives, not DICOM UL PDUs
 dicomforge.dicomweb        QIDO/WADO/STOW helpers with injectable HTTP transport
+dicomforge.transport       optional requests/retry/auth DICOMweb transports
 ```
 
 ## API Stability
@@ -173,6 +188,14 @@ client = DicomwebClient(
 studies = client.search_studies(QidoQuery().patient_id("MRN-123").modality("CT"))
 ```
 
+JPEG preview generation:
+
+```python
+from dicomforge.adapt import to_jpeg_preview
+
+preview = to_jpeg_preview(dataset, frame=0, quality=85)
+```
+
 ## De-identification Scope
 
 DICOMForge implements a practical, conservative subset of the DICOM PS3.15
@@ -234,7 +257,8 @@ For a fuller commercial workflow, see
 - **Compressed pixel access is delegated to pydicom** — `adapt.pixel_array`
   can decode compressed transfer syntaxes when pydicom and the relevant pydicom
   pixel plugin are installed. DICOMForge does not bundle JPEG, JPEG-LS,
-  JPEG 2000, or RLE codec implementations.
+  JPEG 2000, or RLE codec implementations. `adapt.to_jpeg_preview` produces
+  lossy 8-bit display previews, not diagnostic-quality derived images.
 
 ## License
 
