@@ -35,11 +35,13 @@ pip install dicomforge[all]
 
 ## DICOM Capability Status
 
-| Capability | v0.7 Status |
+| Capability | Current Status |
 |------------|-------------|
 | Typed tag normalization (75+ keywords) | ✅ Implemented |
 | Transfer syntax classification (15 syntaxes) | ✅ Implemented |
 | Codec capability registry | ✅ Implemented |
+| Specific Character Set helpers | ✅ ASCII, UTF-8, ISO 8859, ISO 2022 IR 87/149, GB18030/GBK |
+| Person Name component parsing | ✅ `dicomforge.charset.PersonName` |
 | Native pixel metadata validation | ✅ Implemented |
 | Pixel array extraction — uncompressed | ✅ via `dicomforge.adapt` (requires numpy) |
 | Pixel array extraction — compressed | ✅ via pydicom bridge plus codec plugins |
@@ -59,7 +61,7 @@ pip install dicomforge[all]
 | High-level `DicomFile` API | ✅ via `dicomforge.api` |
 | `quick_anonymize` one-liner | ✅ via `dicomforge.api` |
 | Dataset structural validation | ✅ via `dicomforge.api` |
-| Multi-byte character sets (Japanese, Korean, …) | 🔲 Planned (0.9) |
+| Multi-byte character sets (Japanese, Korean, …) | ✅ Explicit helpers plus pydicom write propagation |
 | IOD/module validation | 🔲 Planned (1.0) |
 
 ## Commercial Adoption Readiness
@@ -80,4 +82,4 @@ planned milestone before they are suitable.
 | Compressed pixel decode | ⚠️ | Requires pydicom plus a codec plugin |
 | Wire-compatible DIMSE | ❌ | Planned `dicomforge-network`; use `pynetdicom` now |
 | Regulated clinical workflows | ⚠️ | Not a medical device; site validation required |
-| Multi-byte patient names (Japanese, …) | ⚠️ | Delegated to pydicom; explicit support planned 0.9 |
+| Multi-byte patient names (Japanese, …) | ✅ | Explicit helpers; validate real site fixtures before regulated use |

@@ -3,6 +3,30 @@
 All notable changes to DicomForge are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-06-10
+
+### Added
+- `dicomforge.charset` with dependency-free Specific Character Set helpers:
+  `normalize_specific_character_set`, `python_codecs_for_character_set`,
+  `preferred_specific_character_set`, `dataset_character_set`, `encode_text`,
+  `decode_text`, `can_encode_text`, and `ensure_text_encodable`.
+- `PersonName` dataclass plus `coerce_person_name` for VR-aware PN parsing,
+  DICOM string formatting, and compact display names.
+- `Tag.SpecificCharacterSet` registered as `(0008,0005)` with standard `CS`
+  write VR support.
+- UTF-8, ISO 2022 IR 87 Japanese, ISO 2022 IR 149 Korean, and GB18030
+  Chinese text round-trip tests through Python codecs.
+- Write-time charset validation: non-ASCII text without a declared compatible
+  `SpecificCharacterSet` raises `CharacterSetError` instead of being passed to
+  the backend ambiguously.
+
+### Changed
+- `io.write` now writes `SpecificCharacterSet` before other non-file-meta
+  elements so pydicom-backed writes can encode following text values using the
+  declared character set.
+- `io.write` and `adapt.to_pydicom` now format `PersonName` values as DICOM PN
+  strings.
+
 ## [0.8.1] — 2026-06-10
 
 ### Added

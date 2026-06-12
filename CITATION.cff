@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use DicomForge in your research, please cite it as below."
 type: software
 title: "DicomForge: A Lightweight Python Toolkit for Typed DICOM Processing and Medical Imaging Workflows"
-version: 0.8.1
+version: 0.9.0
 date-released: "2026-06-10"
 license: MIT
 repository-code: "https://github.com/mustafamm072/DicomForge"

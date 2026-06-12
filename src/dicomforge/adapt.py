@@ -600,6 +600,10 @@ def _pydicom_value_to_forge(value: Any) -> Any:
 
 def _forge_value_to_pydicom(value: Any, pydicom: Any) -> Any:
     """Recursively convert DicomForge value types to pydicom equivalents."""
+    from dicomforge.charset import PersonName
+
+    if isinstance(value, PersonName):
+        return value.to_dicom_string()
     if isinstance(value, DicomDataset):
         from dicomforge.io import _vr_for_tag
 

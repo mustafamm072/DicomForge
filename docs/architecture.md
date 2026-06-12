@@ -13,6 +13,8 @@ heavy capabilities are optional plugins.
 - `dicomforge.dataset`: predictable dataset wrapper
 - `dicomforge.transfer_syntax`: transfer syntax classification
 - `dicomforge.codecs`: codec capability registry
+- `dicomforge.charset`: Specific Character Set normalization, text
+  encode/decode checks, and structured DICOM person names
 - `dicomforge.pixels`: frame metadata, pixel safety checks, and lightweight
   pixel helpers
 - `dicomforge.anonymize`: de-identification profiles, UID remapping, private

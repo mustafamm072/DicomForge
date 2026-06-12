@@ -21,13 +21,14 @@ Out of scope for core today:
 
 - full VR-specific value classes
 - IOD/module validation
-- character set transcoding
+- complete ISO 2022 code-extension state-machine coverage for every edge case
 - guaranteed byte-for-byte round trips
 
 ## Tag Registry
 
 `dicomforge.tags` provides 75+ registered keyword tags covering:
 
+- Character sets (`SpecificCharacterSet`)
 - Patient identity (PatientName, PatientID, PatientBirthDate, …)
 - Study / Series / Instance identification (StudyDescription, SeriesNumber,
   InstanceNumber, ImageType, ProtocolName, …)
@@ -41,6 +42,32 @@ Out of scope for core today:
 
 Private tags (odd group numbers) are supported but not assigned keywords.
 
+## Character Sets
+
+`dicomforge.charset` provides dependency-free helpers for DICOM text encoding
+boundaries.
+
+Current scope:
+
+- `SpecificCharacterSet` normalization for default ASCII, UTF-8, common ISO
+  8859 terms, GB18030, GBK, ISO 2022 IR 87 Japanese, and ISO 2022 IR 149
+  Korean terms
+- map common Python codec names back to DICOM Specific Character Set terms
+- `encode_text` / `decode_text` / `can_encode_text` safety helpers
+- `dataset_character_set` for reading a dataset's declared character set
+- `PersonName` and `coerce_person_name` for PN component parsing, formatting,
+  and display names
+- `io.write` propagates `SpecificCharacterSet` before text elements and rejects
+  non-ASCII text when no compatible charset is declared
+- `adapt.to_pydicom` formats structured `PersonName` values but leaves final
+  charset encoding checks to the eventual pydicom write call
+
+Out of scope today:
+
+- full conformance claim for every DICOM ISO 2022 code-extension transition
+- vendor fixture validation for every modality and PACS/VNA combination
+- locale-aware display-name ordering beyond the structured PN components
+
 ## File IO
 
 `dicomforge.io` delegates reading and writing to `pydicom` (≥ 2.4).
@@ -50,6 +77,8 @@ Current scope:
 - pydicom 2.x and 3.x compatibility (`dcmwrite` preferred when available)
 - File Meta Information preservation on read
 - Standard VR assignment for 50+ known tags on write
+- Specific Character Set propagation before text elements on write
+- write-time validation for text encodability against declared character set
 - Required SOP Class UID and SOP Instance UID for file meta generation
 - Default Transfer Syntax UID (Explicit VR Little Endian) when absent
 

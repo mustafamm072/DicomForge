@@ -33,3 +33,11 @@ implementation for real DIMSE interoperability.
 helpers. JPEG previews are lossy 8-bit renderings after optional windowing and
 photometric conversion; do not use them as diagnostic-quality derived images or
 as a substitute for validated modality, presentation state, and viewer behavior.
+
+## Character Sets
+
+`dicomforge.charset` prevents common non-ASCII text mistakes by making
+`SpecificCharacterSet` explicit and rejecting text that cannot be encoded with
+the declared charset. Legacy DICOM character sets, especially ISO 2022
+code-extension data from real modalities, should still be validated with
+site-specific fixtures before regulated clinical use.

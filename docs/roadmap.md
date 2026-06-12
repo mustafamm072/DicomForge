@@ -136,15 +136,24 @@ display workflows.
 - ✅ Native multiframe pixel iterator to avoid loading all frames into memory
 - ✅ Signed 32-bit pixel support in numpy adapter
 
-## 0.9 Character Sets and Internationalisation
+## 0.9 Character Sets and Internationalisation ✅
 
 Target: correct handling of non-ASCII patient and physician names.
 
-- DICOM Specific Character Set (0008,0005) detection and propagation
-- UTF-8 encoding output on write when supported
-- Japanese (ISO 2022 JIS), Korean, Chinese extended character set tests
-- VR-aware string coercion for PN (person names) with component parsing
-- Round-trip test suite against real multi-byte encoded DICOM files
+Status: implemented as a dependency-free core API plus pydicom write
+propagation. DICOMForge now exposes explicit Specific Character Set helpers,
+safe text encode/decode checks, a structured `PersonName` type, and write-time
+validation that prevents undeclared non-ASCII text from being passed to the
+backend ambiguously. Full real-world fixture expansion across modality vendors
+remains part of the 1.0 validation bar.
+
+- ✅ DICOM Specific Character Set (0008,0005) detection and propagation
+- ✅ UTF-8 encoding output on write when supported
+- ✅ Japanese (ISO 2022 IR 87), Korean (ISO 2022 IR 149), and Chinese
+  (GB18030) extended character set tests
+- ✅ VR-aware string coercion for PN (person names) with component parsing
+- ◐ Round-trip tests cover dependency-free codec behavior; pydicom-backed real
+  file fixtures remain planned for the 1.0 validation suite
 
 ## 1.0 Stable Commercial Release
 

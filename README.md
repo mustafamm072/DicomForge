@@ -7,6 +7,7 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Core](https://img.shields.io/badge/core-dependency--free-brightgreen)
 ![DICOMweb](https://img.shields.io/badge/DICOMweb-QIDO%20%7C%20WADO%20%7C%20STOW-blueviolet)
+![i18n](https://img.shields.io/badge/i18n-UTF--8%20%7C%20ISO--2022%20%7C%20GB18030-informational)
 
 `dicom` · `medical-imaging` · `radiology` · `pacs` · `dicomweb` ·
 `de-identification` · `pixel-data` · `healthcare-ai` · `python`
@@ -26,6 +27,7 @@ This repository is intentionally starting with a small, solid core:
 - VOI window, rescale, and photometric interpretation helpers
 - optional pydicom-backed compressed pixel decode and frame iteration
 - optional Pillow-backed 8-bit JPEG preview generation
+- Specific Character Set helpers and structured person-name parsing
 - async networking primitives for association lifecycle and DIMSE-style commands
 - DICOMweb query, retrieval, upload, and multipart helpers
 - optional `pydicom` IO backend
@@ -76,6 +78,7 @@ Use DICOMForge when you need:
   plugins are installed
 - display-ready PIL images and JPEG preview bytes for lightweight viewer/API
   workflows
+- explicit character-set validation before writing non-ASCII DICOM text
 - de-identification planning with deterministic UID remapping and audit reports
 - pydicom-backed file IO behind a smaller application API
 - DICOMweb URL/query, DICOM JSON, STOW multipart, and response parsing helpers
@@ -96,6 +99,7 @@ dicomforge.tags            typed tag parsing and common keyword constants
 dicomforge.dataset         lightweight mutable dataset wrapper
 dicomforge.transfer_syntax transfer syntax classification
 dicomforge.codecs          codec capability registry
+dicomforge.charset         Specific Character Set and person-name helpers
 dicomforge.pixels          pixel metadata safety checks and small value helpers
 dicomforge.anonymize       starter de-identification plans and audit reports
 dicomforge.adapt           pydicom, numpy, Pillow, JSON, and pynetdicom adapters
@@ -196,6 +200,19 @@ from dicomforge.adapt import to_jpeg_preview
 preview = to_jpeg_preview(dataset, frame=0, quality=85)
 ```
 
+Character-set aware person names:
+
+```python
+from dicomforge import DicomDataset, PersonName, Tag
+
+dataset = DicomDataset(
+    {
+        Tag.SpecificCharacterSet: "ISO_IR 192",
+        Tag.PatientName: PersonName("Yamada", "Taro", ideographic="山田^太郎"),
+    }
+)
+```
+
 ## De-identification Scope
 
 DICOMForge implements a practical, conservative subset of the DICOM PS3.15
@@ -259,6 +276,10 @@ For a fuller commercial workflow, see
   pixel plugin are installed. DICOMForge does not bundle JPEG, JPEG-LS,
   JPEG 2000, or RLE codec implementations. `adapt.to_jpeg_preview` produces
   lossy 8-bit display previews, not diagnostic-quality derived images.
+
+- **Character-set support is explicit, not magical** — DICOMForge validates
+  common declared character sets and person names, but full ISO 2022 edge cases
+  and vendor-specific legacy files should still be verified with site fixtures.
 
 ## License
 

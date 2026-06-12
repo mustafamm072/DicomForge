@@ -24,6 +24,19 @@ from dicomforge.codecs import (
     pydicom_pixel_codec,
     pydicom_pixel_registry,
 )
+from dicomforge.charset import (
+    DEFAULT_CHARACTER_SET,
+    PersonName,
+    can_encode_text,
+    coerce_person_name,
+    dataset_character_set,
+    decode_text,
+    encode_text,
+    ensure_text_encodable,
+    normalize_specific_character_set,
+    preferred_specific_character_set,
+    python_codecs_for_character_set,
+)
 from dicomforge.dataset import DicomDataset
 from dicomforge.dicomweb import (
     DicomwebClient,
@@ -42,6 +55,7 @@ from dicomforge.dicomweb import (
     parse_multipart_related_streaming,
 )
 from dicomforge.errors import (
+    CharacterSetError,
     DicomForgeError,
     DicomValidationError,
     InvalidTagError,
@@ -116,11 +130,24 @@ __all__ = [
     "CodecRegistry",
     "pydicom_pixel_codec",
     "pydicom_pixel_registry",
+    # Character sets
+    "DEFAULT_CHARACTER_SET",
+    "PersonName",
+    "can_encode_text",
+    "coerce_person_name",
+    "dataset_character_set",
+    "decode_text",
+    "encode_text",
+    "ensure_text_encodable",
+    "normalize_specific_character_set",
+    "preferred_specific_character_set",
+    "python_codecs_for_character_set",
     # Core types
     "DicomDataset",
     "Tag",
     "TransferSyntax",
     # Errors
+    "CharacterSetError",
     "DicomForgeError",
     "DicomValidationError",
     "InvalidTagError",

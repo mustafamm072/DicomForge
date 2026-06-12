@@ -19,6 +19,7 @@ class Tag:
 
     _KEYWORDS: ClassVar[Dict[str, "Tag"]] = {}
 
+    SpecificCharacterSet: ClassVar["Tag"]
     PatientName: ClassVar["Tag"]
     PatientID: ClassVar["Tag"]
     PatientBirthDate: ClassVar["Tag"]
@@ -193,6 +194,7 @@ def _register_keyword(name: str, group: int, element: int) -> Tag:
     return tag
 
 
+Tag.SpecificCharacterSet = _register_keyword("SpecificCharacterSet", 0x0008, 0x0005)
 Tag.PatientName = _register_keyword("PatientName", 0x0010, 0x0010)
 Tag.PatientID = _register_keyword("PatientID", 0x0010, 0x0020)
 Tag.PatientBirthDate = _register_keyword("PatientBirthDate", 0x0010, 0x0030)

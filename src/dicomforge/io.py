@@ -5,14 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Union
 
+from dicomforge.charset import PersonName, ensure_text_encodable
 from dicomforge.dataset import DicomDataset
-from dicomforge.errors import DicomValidationError, MissingBackendError
+from dicomforge.errors import CharacterSetError, DicomValidationError, MissingBackendError
 from dicomforge.tags import Tag
 from dicomforge.uids import ImplementationUID, TransferSyntaxUID
 
 PathLike = Union[str, Path]
 
 _KNOWN_VR = {
+    Tag.SpecificCharacterSet: "CS",
     Tag.PatientName: "PN",
     Tag.PatientID: "LO",
     Tag.PatientBirthDate: "DA",
@@ -117,6 +119,25 @@ _KNOWN_VR = {
     Tag.ReferencedSOPInstanceUID: "UI",
 }
 
+_TEXT_VRS = {
+    "AE",
+    "AS",
+    "CS",
+    "DA",
+    "DS",
+    "DT",
+    "IS",
+    "LO",
+    "LT",
+    "PN",
+    "SH",
+    "ST",
+    "TM",
+    "UC",
+    "UR",
+    "UT",
+}
+
 
 def _copy_pydicom_elements(source: Any, dataset: DicomDataset) -> None:
     for element in source:
@@ -143,6 +164,33 @@ def _required_value(dataset: DicomDataset, primary: Tag, fallback: Tag) -> objec
     raise DicomValidationError(
         f"Writing a DICOM file requires {primary} or {fallback} for File Meta Information."
     )
+
+
+def _value_for_write(value: Any) -> Any:
+    if isinstance(value, PersonName):
+        return value.to_dicom_string()
+    if isinstance(value, DicomDataset):
+        return value
+    if isinstance(value, list):
+        return [_value_for_write(item) for item in value]
+    return value
+
+
+def _validate_text_value(value: Any, specific_character_set: Any) -> None:
+    if isinstance(value, DicomDataset):
+        return
+    if isinstance(value, (bytes, bytearray)):
+        return
+    if isinstance(value, list):
+        for item in value:
+            _validate_text_value(item, specific_character_set)
+        return
+    try:
+        ensure_text_encodable(value, specific_character_set)
+    except CharacterSetError:
+        if str(value).isascii():
+            return
+        raise
 
 
 def _ensure_file_meta(raw: Any, dataset: DicomDataset, pydicom: Any) -> None:
@@ -220,10 +268,23 @@ def write(
     raw = template if template is not None else pydicom.Dataset()
     if ensure_file_meta:
         _ensure_file_meta(raw, dataset, pydicom)
+    specific_character_set = dataset.get(Tag.SpecificCharacterSet)
+    if specific_character_set is not None:
+        raw.add_new(
+            (Tag.SpecificCharacterSet.group, Tag.SpecificCharacterSet.element),
+            _vr_for_tag(Tag.SpecificCharacterSet, dataset),
+            specific_character_set,
+        )
     for tag, value in dataset.items():
         if ensure_file_meta and tag.group == 0x0002:
             continue
-        raw.add_new((tag.group, tag.element), _vr_for_tag(tag, dataset), value)
+        if tag == Tag.SpecificCharacterSet:
+            continue
+        vr = _vr_for_tag(tag, dataset)
+        write_value = _value_for_write(value)
+        if vr in _TEXT_VRS:
+            _validate_text_value(write_value, specific_character_set)
+        raw.add_new((tag.group, tag.element), vr, write_value)
     # pydicom ≥ 3.0 deprecates Dataset.save_as() in favour of pydicom.dcmwrite().
     if hasattr(pydicom, "dcmwrite"):
         pydicom.dcmwrite(str(path), raw)

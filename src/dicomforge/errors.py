@@ -19,3 +19,7 @@ class DicomValidationError(DicomForgeError, ValueError):
 
 class InvalidTagError(DicomForgeError, ValueError):
     """Raised when a DICOM tag cannot be parsed."""
+
+
+class CharacterSetError(DicomForgeError, ValueError):
+    """Raised when DICOM text cannot be encoded or decoded safely."""
