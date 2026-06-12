@@ -28,7 +28,8 @@ heavy capabilities are optional plugins.
 - `dicomforge.dicomweb`: dependency-free DICOMweb URL, transport, JSON, and multipart helpers
 - `dicomforge.transport`: optional DICOMweb HTTP transports with requests,
   bearer-token auth, retry, and streaming helpers
-- `dicomforge.uids`: selected standard UID and DIMSE status constants
+- `dicomforge.uids`: selected standard UID and DIMSE status constants, plus
+  UID grammar validation and UUID-derived UID generation
 
 ## De-identification stance
 

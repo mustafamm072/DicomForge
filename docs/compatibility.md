@@ -3,19 +3,20 @@
 ## Python Versions
 
 DICOMForge uses `from __future__ import annotations` throughout and targets
-Python 3.9+.  All five supported versions are exercised in CI.
+Python 3.9+.  All six supported versions are exercised in CI.
 
 | Python | Status |
 |--------|--------|
-| 3.9    | ✅ Supported — minimum required version |
+| 3.9    | ✅ Supported — minimum required version (past upstream end-of-life; kept as the floor for long-lived deployments) |
 | 3.10   | ✅ Supported |
 | 3.11   | ✅ Supported |
 | 3.12   | ✅ Supported |
 | 3.13   | ✅ Supported |
+| 3.14   | ✅ Supported |
 
 No deprecated stdlib modules are used.  `asyncio` calls use `get_running_loop()`
 (not the deprecated `get_event_loop()`).  Tests pass cleanly with
-`-W error::DeprecationWarning` on Python 3.9.
+`-W error::DeprecationWarning` on Python 3.9 and 3.14.
 
 ## Optional Backends
 
@@ -37,8 +38,8 @@ pip install dicomforge[all]
 
 | Capability | Current Status |
 |------------|-------------|
-| Typed tag normalization (75+ keywords) | ✅ Implemented |
-| Transfer syntax classification (15 syntaxes) | ✅ Implemented |
+| Typed tag normalization (100 keywords) | ✅ Implemented |
+| Transfer syntax classification (14 syntaxes) | ✅ Implemented |
 | Codec capability registry | ✅ Implemented |
 | Specific Character Set helpers | ✅ ASCII, UTF-8, ISO 8859, ISO 2022 IR 87/149, GB18030/GBK |
 | Person Name component parsing | ✅ `dicomforge.charset.PersonName` |
@@ -51,7 +52,8 @@ pip install dicomforge[all]
 | pydicom-backed read/write | ✅ Implemented (pydicom 2.x + 3.x) |
 | Starter de-identification plan (48 rules) | ✅ Implemented |
 | Full DICOM PS3.15 profile | 🔲 Planned (1.0) |
-| Date-shift de-identification action | 🔲 Planned |
+| Date-shift de-identification action | ✅ `AnonymizationAction.SHIFT_DATE` |
+| UID validation and generation | ✅ `is_valid_uid` / `generate_uid` (PS3.5 grammar, UUID-derived `2.25` root) |
 | Async command lifecycle (JSON transport) | ✅ Implemented |
 | DICOM Upper Layer wire compatibility | 🔲 Planned (dicomforge-network, 1.0) |
 | DICOMweb query/client/multipart helpers | ✅ Implemented |
@@ -62,7 +64,7 @@ pip install dicomforge[all]
 | `quick_anonymize` one-liner | ✅ via `dicomforge.api` |
 | Dataset structural validation | ✅ via `dicomforge.api` |
 | Multi-byte character sets (Japanese, Korean, …) | ✅ Explicit helpers plus pydicom write propagation |
-| IOD/module validation | 🔲 Planned (1.0) |
+| IOD/module validation | ◐ `validate_for_sop_class` covers five common image SOP Classes; full module tables planned (1.0) |
 
 ## Commercial Adoption Readiness
 

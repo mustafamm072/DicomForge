@@ -85,7 +85,7 @@ standard-library tests. All items below were shipped in v0.6.0.
 - 75+ DICOM tags (added clinical context: SeriesNumber, BodyPartExamined,
   PixelSpacing, ImagePositionPatient, Manufacturer, and more)
 - 35+ SOP Class UIDs (PET, NM, US, RT, SR, WSI added)
-- 15 Transfer Syntax UIDs (JPEG 2000 lossy, JPEG-LS near-lossless, HT-JPEG 2000)
+- 14 Transfer Syntax UIDs (JPEG 2000 lossy, JPEG-LS near-lossless, HT-JPEG 2000)
 - 48 PS3.15 de-identification rules (added patient weight/size/comments,
   ethnic group, attending/requesting physician, device serial number, and more)
 
@@ -167,8 +167,9 @@ changes and that regulated-software teams can cite in their design histories.
 
 **Conformance:**
 - Formal DICOM Conformance Statement template (PS3.2-inspired)
-- IOD/Module validation: verify a dataset satisfies the mandatory attribute
-  requirements for its declared SOP Class
+- IOD/Module validation: extend `validate_for_sop_class` beyond the initial
+  five image SOP Classes (CT, MR, US, CR, Secondary Capture) to full module
+  tables for each declared SOP Class
 - Full DICOM PS3.15 Basic Application Confidentiality Profile option table coverage
 - Validated character set handling across Japanese, Korean, and Chinese encodings
 

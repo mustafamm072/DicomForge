@@ -3,6 +3,21 @@
 All notable changes to DicomForge are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Python 3.14 support: CI matrix and package classifiers now cover 3.9–3.14.
+- README examples for date-shift de-identification, `validate_for_sop_class`,
+  and the `generate_uid` / `is_valid_uid` helpers.
+- Contribution documentation checklist requiring CHANGELOG, conformance, and
+  compatibility updates for user-visible changes.
+
+### Fixed
+- Documentation corrections: date-shift anonymization, SOP Class validation,
+  and UID utilities (shipped in 0.8.0) are now reflected in the conformance
+  notes and compatibility matrix; registry counts refreshed (100 keyword tags,
+  14 transfer syntaxes, 90+ write VRs, 24 `DicomFile` properties).
+
 ## [0.9.0] — 2026-06-10
 
 ### Added
@@ -52,6 +67,20 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - The default `CodecRegistry` automatically registers a `pydicom-pixels` bridge
   only for compressed transfer syntaxes with an available pydicom pixel handler.
 - Signed 32-bit native pixel arrays are covered by the numpy adapter tests.
+
+The following items also shipped in 0.8.0 but were omitted from this entry
+when it was first published; they were documented retroactively on 2026-06-11:
+
+- `AnonymizationAction.SHIFT_DATE`: date-shift de-identification action with a
+  configurable integer day offset that preserves DA/DT formatting, time
+  components, and timezone suffixes, recorded in the audit report.
+- `is_valid_uid` and `generate_uid` in `dicomforge.uids`: DICOM UID grammar
+  validation (PS3.5 §9.1) and UUID-derived UID generation under the standard
+  `2.25` root or a custom organisational root.
+- `validate_for_sop_class` in `dicomforge.api`: Type 1 / Type 2 mandatory
+  attribute validation for CT, MR, Ultrasound, CR, and Secondary Capture
+  image storage SOP Classes.
+- `Tag.KVP`, `Tag.ScanningSequence`, and `Tag.SequenceVariant` keyword tags.
 
 ### Changed
 - Native pixel dtype mapping now respects Explicit VR Big Endian byte order.

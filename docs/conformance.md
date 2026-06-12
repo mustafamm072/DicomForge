@@ -26,7 +26,7 @@ Out of scope for core today:
 
 ## Tag Registry
 
-`dicomforge.tags` provides 75+ registered keyword tags covering:
+`dicomforge.tags` provides 100 registered keyword tags covering:
 
 - Character sets (`SpecificCharacterSet`)
 - Patient identity (PatientName, PatientID, PatientBirthDate, …)
@@ -41,6 +41,24 @@ Out of scope for core today:
 - Referenced SOP sequences (ReferencedSOPClassUID, ReferencedSOPInstanceUID, …)
 
 Private tags (odd group numbers) are supported but not assigned keywords.
+
+## UID Utilities
+
+`dicomforge.uids` provides standard UID constants plus dependency-free helpers.
+
+Current scope:
+
+- Transfer Syntax, SOP Class, query/retrieve model, and DICOMForge
+  implementation UID constants, plus DIMSE status codes
+- `is_valid_uid` — DICOM UID grammar validation (PS3.5 §9.1): digits and dots
+  only, ≤ 64 characters, no empty components, no leading zeros
+- `generate_uid` — globally unique UIDs derived from UUID4 under the standard
+  `2.25` root (PS3.5 §B.2), or under a caller-supplied organisational root
+
+Out of scope today:
+
+- UID registry lookups or semantic classification of arbitrary UIDs
+- collision tracking across processes (UUID-derived uniqueness only)
 
 ## Character Sets
 
@@ -76,7 +94,7 @@ Current scope:
 
 - pydicom 2.x and 3.x compatibility (`dcmwrite` preferred when available)
 - File Meta Information preservation on read
-- Standard VR assignment for 50+ known tags on write
+- Standard VR assignment for 90+ known tags on write
 - Specific Character Set propagation before text elements on write
 - write-time validation for text encodability against declared character set
 - Required SOP Class UID and SOP Instance UID for file meta generation
@@ -127,15 +145,20 @@ Out of scope today:
 Current scope:
 
 - `DicomFile` — lazy-loading DICOM file wrapper with named property access for
-  30+ common tags, `.anonymize()`, `.save()`, `.validate()`, and `.tags()`
+  24 common tags, `.anonymize()`, `.save()`, `.validate()`, and `.tags()`
 - `quick_anonymize(input, output)` — read → de-identify → write in one call
 - `validate_dataset` — structural validation: required tags, pixel metadata
   consistency, burned-in annotation warning
+- `validate_for_sop_class` — DICOM Type 1 / Type 2 mandatory attribute
+  validation for CT, MR, Ultrasound, CR, and Secondary Capture image storage
+  SOP Classes; unrecognised SOP Classes return an informational issue instead
+  of raising
 - `batch_anonymize` — anonymize a list of files; partial failures isolated
 
 Out of scope today:
 
-- IOD-specific validation (mandatory attributes per SOP Class)
+- IOD module validation beyond the five image SOP Classes above; Type 3 and
+  conditional attributes are not checked
 - full burned-in annotation detection (flag only; no pixel analysis)
 - multi-threaded or async batch processing
 
@@ -177,13 +200,15 @@ Current scope (48 rules in `starter_profile`):
 - recursively remove private tags (configurable)
 - deterministically remap Study, Series, SOP, Frame of Reference, and
   MediaStorageSOPInstanceUID (same UID in ↔ same UID out across the batch)
+- `AnonymizationAction.SHIFT_DATE` — shift DA/DT values by a configurable
+  integer day offset while preserving time components and timezone suffixes;
+  shifts are recorded in the audit report
 - thread-safe UidRemapper (threading.Lock on internal cache)
 - return an applied-event audit report for downstream logging
 
 Out of scope today:
 
 - full DICOM PS3.15 Basic Application Confidentiality Profile option table
-- date shifting / date offset action
 - burned-in pixel annotation detection
 - UID remapping across an external longitudinal registry
 

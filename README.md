@@ -22,7 +22,10 @@ This repository is intentionally starting with a small, solid core:
 - typed tags and value access
 - transfer syntax classification
 - pluggable codec registry
-- de-identification profiles, deterministic UID remapping, and audit reports
+- de-identification profiles, deterministic UID remapping, date shifting, and
+  audit reports
+- DICOM UID grammar validation and UUID-derived UID generation
+- structural and SOP Class (Type 1 / Type 2 attribute) dataset validation
 - pixel metadata and safety checks
 - VOI window, rescale, and photometric interpretation helpers
 - optional pydicom-backed compressed pixel decode and frame iteration
@@ -79,7 +82,9 @@ Use DICOMForge when you need:
 - display-ready PIL images and JPEG preview bytes for lightweight viewer/API
   workflows
 - explicit character-set validation before writing non-ASCII DICOM text
-- de-identification planning with deterministic UID remapping and audit reports
+- de-identification planning with deterministic UID remapping, date shifting,
+  and audit reports
+- mandatory-attribute validation against common image storage SOP Classes
 - pydicom-backed file IO behind a smaller application API
 - DICOMweb URL/query, DICOM JSON, STOW multipart, and response parsing helpers
 - async lifecycle and backpressure primitives for DICOM-like service design
@@ -163,6 +168,48 @@ report = plan.apply_with_report(dataset)
 assert dataset.get("PatientName") == "Anonymous"
 assert dataset.get("PatientIdentityRemoved") == "YES"
 assert report.private_tags_removed == 1
+```
+
+Date-shift de-identification (preserves intervals between studies while hiding
+real dates):
+
+```python
+from dicomforge import AnonymizationAction, AnonymizationPlan, DicomDataset, Rule, Tag
+
+dataset = DicomDataset({Tag.StudyDate: "20260101", Tag.SeriesDate: "20260102"})
+
+plan = AnonymizationPlan(
+    [
+        Rule(Tag.StudyDate, AnonymizationAction.SHIFT_DATE, -30),
+        Rule(Tag.SeriesDate, AnonymizationAction.SHIFT_DATE, -30),
+    ]
+)
+plan.apply(dataset)
+
+assert dataset.get(Tag.StudyDate) == "20251202"
+assert dataset.get(Tag.SeriesDate) == "20251203"
+```
+
+SOP Class mandatory-attribute validation:
+
+```python
+from dicomforge import DicomDataset, SopClassUID, Tag, validate_for_sop_class
+
+ct = DicomDataset({Tag.SOPClassUID: SopClassUID.CTImageStorage})
+for issue in validate_for_sop_class(ct):
+    print(issue)
+# [error] CT Image Storage requires SOPInstanceUID (0008,0018) (Type 1 — must be present and non-empty).
+# ...
+```
+
+UID generation and validation:
+
+```python
+from dicomforge import generate_uid, is_valid_uid
+
+uid = generate_uid()  # UUID-derived under the standard "2.25" root (PS3.5 §B.2)
+assert is_valid_uid(uid)
+assert not is_valid_uid("1.2.03.4")  # leading zero in a component
 ```
 
 Async networking:

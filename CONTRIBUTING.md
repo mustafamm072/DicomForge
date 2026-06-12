@@ -29,3 +29,16 @@ When adding DICOM behavior, include one of:
 
 Full clinical conformance work should also update the compatibility matrix and
 conformance notes.
+
+## Documentation Checklist
+
+Every pull request that adds or changes user-visible behavior must also update:
+
+- `CHANGELOG.md` — an entry under the upcoming release
+- `docs/conformance.md` — the current scope / out of scope boundary for the
+  affected module
+- `docs/compatibility.md` — the capability status table, if a row exists or a
+  capability moves from planned to implemented
+
+Stale documentation is treated as a bug; features that ship without these
+updates will be asked to add them before merge.
