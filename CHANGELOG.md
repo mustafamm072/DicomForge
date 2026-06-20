@@ -5,12 +5,39 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-06-19
+
 ### Added
+- **Native, dependency-free DICOM Part 10 file IO** (`dicomforge.part10`):
+  `read_file`, `write_file`, and in-memory `loads` / `dumps`. Reads and writes
+  the 128-byte preamble, `DICM` magic, File Meta Information group, and data set
+  for Implicit VR Little Endian, Explicit VR Little Endian, Explicit VR Big
+  Endian, and Deflated Explicit VR Little Endian (via the standard-library
+  `zlib`) — with no third-party packages. Handles nested sequences (defined and
+  undefined length), multi-valued elements, all numeric VRs, `AT`, and
+  encapsulated pixel-data reading. Verified bidirectionally interoperable with
+  pydicom across all four transfer syntaxes.
+- `backend` parameter on `io.read` / `io.write` (`"auto"` | `"native"` |
+  `"pydicom"`). `"auto"` (default) prefers pydicom when installed and otherwise
+  uses the native codec, so reading and writing `.dcm` files now works with zero
+  optional dependencies installed.
+- `transfer_syntax` parameter on `io.write` for choosing the output transfer
+  syntax with the native backend.
+- Top-level `dcmread` / `dcmwrite` aliases (and `read` / `write`) for a familiar,
+  discoverable file IO entry point.
+- `dicomforge.dictionary` module: the shared tag → VR data dictionary
+  (`KNOWN_VR`, `vr_for_tag`) plus VR category metadata, now the single source of
+  truth used by both the native codec and the pydicom writer.
 - Python 3.14 support: CI matrix and package classifiers now cover 3.9–3.14.
 - README examples for date-shift de-identification, `validate_for_sop_class`,
   and the `generate_uid` / `is_valid_uid` helpers.
 - Contribution documentation checklist requiring CHANGELOG, conformance, and
   compatibility updates for user-visible changes.
+
+### Changed
+- `io._vr_for_tag` and the write-time VR resolution now delegate to
+  `dicomforge.dictionary.vr_for_tag`; the previously duplicated `io._KNOWN_VR`
+  map was extracted into the shared dictionary with identical behavior.
 
 ### Fixed
 - Documentation corrections: date-shift anonymization, SOP Class validation,

@@ -22,7 +22,8 @@ No deprecated stdlib modules are used.  `asyncio` calls use `get_running_loop()`
 
 | Backend | Install | Status |
 |---------|---------|--------|
-| pydicom ≥ 2.4 | `pip install dicomforge[pydicom]` | File IO, conversion, compressed pixel bridge |
+| (none) | built in | Native DICOM Part 10 file read/write for uncompressed transfer syntaxes (`dicomforge.part10`) |
+| pydicom ≥ 2.4 | `pip install dicomforge[pydicom]` | Conversion, compressed pixel bridge, and file IO for compressed transfer syntaxes |
 | pydicom ≥ 3.0 | same | Supported — uses `pydicom.dcmwrite()` when available |
 | numpy ≥ 1.23 | `pip install dicomforge[pixels]` | Pixel arrays and frame iteration |
 | Pillow ≥ 10 | `pip install dicomforge[pixels]` | `adapt.to_pil_image`, JPEG preview helpers |
@@ -49,6 +50,7 @@ pip install dicomforge[all]
 | Multiframe pixel iteration | ✅ `adapt.iter_pixel_frames` |
 | Color-space conversion | ✅ RGB/YBR display conversion in `to_pil_image` |
 | JPEG preview generation | ✅ `adapt.to_jpeg_preview` / `adapt.from_jpeg_preview` |
+| Native dependency-free file read/write | ✅ `dicomforge.part10` — Implicit/Explicit VR LE, Explicit VR BE, Deflated |
 | pydicom-backed read/write | ✅ Implemented (pydicom 2.x + 3.x) |
 | Starter de-identification plan (48 rules) | ✅ Implemented |
 | Full DICOM PS3.15 profile | 🔲 Planned (1.0) |
@@ -74,6 +76,7 @@ planned milestone before they are suitable.
 
 | Workflow | Ready today? | Notes |
 |----------|:------------:|-------|
+| Read/write uncompressed DICOM files with no dependencies | ✅ | `dcmread` / `dcmwrite`, native backend |
 | Research de-identification (non-pixel) | ✅ | Pair with pixel review and governance policy |
 | DICOM metadata extraction and inspection | ✅ | `DicomFile`, `DicomDataset`, pydicom adapter |
 | DICOMweb QIDO/WADO/STOW integration | ✅ | Inject auth/retry in your `DicomwebTransport` |

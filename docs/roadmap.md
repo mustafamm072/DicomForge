@@ -155,6 +155,30 @@ remains part of the 1.0 validation bar.
 - ◐ Round-trip tests cover dependency-free codec behavior; pydicom-backed real
   file fixtures remain planned for the 1.0 validation suite
 
+## 0.10 Native DICOM File IO ✅
+
+Target: read and write DICOM Part 10 files with zero third-party dependencies,
+closing the gap with pydicom for the most fundamental DICOM operation.
+
+Status: implemented in `dicomforge.part10` and wired into `dicomforge.io`
+through a `backend` selector. The native codec is dependency-free and was
+verified bidirectionally interoperable with pydicom across every supported
+transfer syntax. pydicom remains the backend for compressed pixel data.
+
+- ✅ Native DICOM Part 10 reader/writer (`part10.read_file`, `part10.write_file`,
+  in-memory `part10.loads` / `part10.dumps`): preamble, `DICM` magic, File Meta
+  Information group, and data set encoding/decoding
+- ✅ Implicit VR Little Endian, Explicit VR Little Endian, Explicit VR Big
+  Endian, and Deflated Explicit VR Little Endian (stdlib `zlib`)
+- ✅ Nested sequences (defined and undefined length), multi-valued elements, all
+  numeric VRs, `AT`, and character-set-aware text
+- ✅ `backend="auto"|"native"|"pydicom"` on `io.read` / `io.write`; native is the
+  default whenever pydicom is not installed, so file IO works with zero
+  optional dependencies
+- ✅ `dcmread` / `dcmwrite` top-level aliases and a shared `dicomforge.dictionary`
+  tag → VR data dictionary
+- ✅ Cross-compatibility tests against pydicom in both directions
+
 ## 1.0 Stable Commercial Release
 
 Target: a release that commercial teams can adopt without expecting breaking

@@ -38,6 +38,10 @@ from dicomforge.charset import (
     python_codecs_for_character_set,
 )
 from dicomforge.dataset import DicomDataset
+from dicomforge.dictionary import KNOWN_VR, vr_for_tag
+from dicomforge.io import read, write
+from dicomforge.io import read as dcmread, write as dcmwrite
+from dicomforge import part10
 from dicomforge.dicomweb import (
     DicomwebClient,
     DicomwebError,
@@ -146,6 +150,14 @@ __all__ = [
     "DicomDataset",
     "Tag",
     "TransferSyntax",
+    # File IO
+    "read",
+    "write",
+    "dcmread",
+    "dcmwrite",
+    "part10",
+    "KNOWN_VR",
+    "vr_for_tag",
     # Errors
     "CharacterSetError",
     "DicomForgeError",

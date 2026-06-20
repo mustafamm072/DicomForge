@@ -88,7 +88,40 @@ Out of scope today:
 
 ## File IO
 
-`dicomforge.io` delegates reading and writing to `pydicom` (≥ 2.4).
+`dicomforge.io` exposes `read` / `write` (aliased as `dcmread` / `dcmwrite`)
+over two interchangeable backends, selected by the `backend` argument
+(`"auto"` | `"native"` | `"pydicom"`). `"auto"` prefers pydicom when installed
+and falls back to the native codec otherwise.
+
+### Native backend (`dicomforge.part10`)
+
+The native codec is dependency-free and implements the DICOM File Format
+(PS3.10): 128-byte preamble, `DICM` magic, File Meta Information group (always
+Explicit VR Little Endian), and the data set in its declared transfer syntax.
+
+Current scope:
+
+- read and write Implicit VR Little Endian, Explicit VR Little Endian, Explicit
+  VR Big Endian, and Deflated Explicit VR Little Endian (via stdlib `zlib`)
+- nested sequences with both defined and undefined (delimited) lengths
+- multi-valued elements, all numeric VRs (US/SS/UL/SL/FL/FD/SV/UV), `AT`, and
+  character-set-aware text decoding/encoding
+- File Meta Information group-length fast path plus a lenient fallback for files
+  that omit `(0002,0000)`
+- reads encapsulated (compressed) pixel data as opaque fragment bytes
+- `force=True` reads bare, preamble-less data sets, auto-detecting Implicit vs
+  Explicit VR Little Endian
+- verified bidirectionally interoperable with pydicom across all four supported
+  transfer syntaxes
+
+Out of scope for the native backend today:
+
+- writing encapsulated/compressed pixel data (use `backend="pydicom"`)
+- VR inference for tags not in the data dictionary under Implicit VR (preserved
+  as raw `UN` bytes rather than corrupted)
+- byte-for-byte preservation of multi-fragment encapsulated pixel data on read
+
+### pydicom backend
 
 Current scope:
 
@@ -99,11 +132,7 @@ Current scope:
 - write-time validation for text encodability against declared character set
 - Required SOP Class UID and SOP Instance UID for file meta generation
 - Default Transfer Syntax UID (Explicit VR Little Endian) when absent
-
-Out of scope today:
-
-- VR inference for tags not in the known VR table (falls back to `UN`)
-- Guaranteed pixel-for-pixel round-trip fidelity on compressed syntaxes
+- compressed pixel-data round-trips, including faithful fragment preservation
 
 ## Adoption Layer
 

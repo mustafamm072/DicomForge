@@ -1,123 +1,59 @@
-"""File IO adapters."""
+"""File IO adapters.
+
+Two interchangeable backends read and write DICOM files:
+
+* ``"native"`` — DicomForge's own dependency-free DICOM Part 10 codec
+  (:mod:`dicomforge.part10`).  Handles the uncompressed transfer syntaxes
+  (Implicit/Explicit VR Little Endian, Explicit VR Big Endian) and Deflated
+  Explicit VR Little Endian with no third-party packages.
+* ``"pydicom"`` — the optional :mod:`pydicom` backend, required for compressed
+  (encapsulated) pixel data and the broadest real-world coverage.
+
+The default ``backend="auto"`` prefers pydicom when it is importable and falls
+back to the native codec otherwise, so reading and writing a ``.dcm`` file now
+works out of the box even with zero optional dependencies installed.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Union
 
+from dicomforge import part10
 from dicomforge.charset import PersonName, ensure_text_encodable
 from dicomforge.dataset import DicomDataset
+from dicomforge.dictionary import vr_for_tag
 from dicomforge.errors import CharacterSetError, DicomValidationError, MissingBackendError
 from dicomforge.tags import Tag
 from dicomforge.uids import ImplementationUID, TransferSyntaxUID
 
 PathLike = Union[str, Path]
 
-_KNOWN_VR = {
-    Tag.SpecificCharacterSet: "CS",
-    Tag.PatientName: "PN",
-    Tag.PatientID: "LO",
-    Tag.PatientBirthDate: "DA",
-    Tag.PatientSex: "CS",
-    Tag.PatientAge: "AS",
-    Tag.PatientAddress: "LO",
-    Tag.PatientTelephoneNumbers: "SH",
-    Tag.OtherPatientIDs: "LO",
-    Tag.PatientComments: "LT",
-    Tag.PatientWeight: "DS",
-    Tag.PatientSize: "DS",
-    Tag.EthnicGroup: "SH",
-    Tag.PregnancyStatus: "US",
-    Tag.SmokingStatus: "CS",
-    Tag.MedicalAlerts: "LO",
-    Tag.Allergies: "LO",
-    Tag.AdmittingDiagnosesDescription: "LT",
-    Tag.AccessionNumber: "SH",
-    Tag.StudyDate: "DA",
-    Tag.SeriesDate: "DA",
-    Tag.AcquisitionDate: "DA",
-    Tag.ContentDate: "DA",
-    Tag.StudyTime: "TM",
-    Tag.SeriesTime: "TM",
-    Tag.AcquisitionTime: "TM",
-    Tag.ContentTime: "TM",
-    Tag.InstitutionName: "LO",
-    Tag.InstitutionAddress: "ST",
-    Tag.ReferringPhysicianName: "PN",
-    Tag.PerformingPhysicianName: "PN",
-    Tag.OperatorsName: "PN",
-    Tag.StationName: "SH",
-    Tag.StudyID: "SH",
-    Tag.StudyInstanceUID: "UI",
-    Tag.SeriesInstanceUID: "UI",
-    Tag.SOPInstanceUID: "UI",
-    Tag.SOPClassUID: "UI",
-    Tag.MediaStorageSOPClassUID: "UI",
-    Tag.MediaStorageSOPInstanceUID: "UI",
-    Tag.Modality: "CS",
-    Tag.TransferSyntaxUID: "UI",
-    Tag.ImplementationClassUID: "UI",
-    Tag.SamplesPerPixel: "US",
-    Tag.PhotometricInterpretation: "CS",
-    Tag.PlanarConfiguration: "US",
-    Tag.NumberOfFrames: "IS",
-    Tag.Rows: "US",
-    Tag.Columns: "US",
-    Tag.BitsAllocated: "US",
-    Tag.BitsStored: "US",
-    Tag.HighBit: "US",
-    Tag.PixelRepresentation: "US",
-    Tag.WindowCenter: "DS",
-    Tag.WindowWidth: "DS",
-    Tag.RescaleIntercept: "DS",
-    Tag.RescaleSlope: "DS",
-    Tag.RescaleType: "LO",
-    # Study / Series / Instance identification
-    Tag.StudyDescription: "LO",
-    Tag.SeriesDescription: "LO",
-    Tag.SeriesNumber: "IS",
-    Tag.InstanceNumber: "IS",
-    Tag.ImageType: "CS",
-    Tag.AcquisitionNumber: "IS",
-    Tag.AcquisitionDateTime: "DT",
-    Tag.ProtocolName: "LO",
-    Tag.RequestedProcedureDescription: "LO",
-    Tag.FrameOfReferenceUID: "UI",
-    Tag.LongitudinalTemporalInformationModified: "CS",
-    Tag.PatientIdentityRemoved: "CS",
-    Tag.DeidentificationMethod: "LO",
-    # Equipment
-    Tag.Manufacturer: "LO",
-    Tag.ManufacturerModelName: "LO",
-    Tag.DeviceSerialNumber: "LO",
-    Tag.SoftwareVersions: "LO",
-    Tag.InstitutionalDepartmentName: "LO",
-    # Patient clinical context
-    Tag.BodyPartExamined: "CS",
-    Tag.PatientPosition: "CS",
-    Tag.ViewPosition: "CS",
-    Tag.PatientWeight: "DS",
-    Tag.PatientSize: "DS",
-    Tag.AttendingPhysicianName: "PN",
-    Tag.RequestingPhysician: "PN",
-    Tag.BurnedInAnnotation: "CS",
-    # Image geometry
-    Tag.PixelSpacing: "DS",
-    Tag.ImagerPixelSpacing: "DS",
-    Tag.SliceThickness: "DS",
-    Tag.SliceLocation: "DS",
-    Tag.SpacingBetweenSlices: "DS",
-    Tag.ImagePositionPatient: "DS",
-    Tag.ImageOrientationPatient: "DS",
-    # Pixel value range
-    Tag.SmallestImagePixelValue: "US",
-    Tag.LargestImagePixelValue: "US",
-    # Referenced SOP sequences
-    Tag.ReferencedStudySequence: "SQ",
-    Tag.ReferencedSeriesSequence: "SQ",
-    Tag.ReferencedSOPClassUID: "UI",
-    Tag.ReferencedSOPInstanceUID: "UI",
-}
+_VALID_BACKENDS = ("auto", "native", "pydicom")
+
+
+def _pydicom_available() -> bool:
+    try:
+        import pydicom  # type: ignore[import-not-found]  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _use_native_backend(backend: str, *, template_present: bool = False) -> bool:
+    if backend not in _VALID_BACKENDS:
+        raise ValueError(
+            f"backend must be one of {_VALID_BACKENDS!r}, got {backend!r}."
+        )
+    if backend == "native":
+        return True
+    if backend == "pydicom":
+        return False
+    # auto: a pydicom template can only be honoured by pydicom; otherwise prefer
+    # pydicom when available and fall back to the native codec.
+    if template_present:
+        return False
+    return not _pydicom_available()
 
 _TEXT_VRS = {
     "AE",
@@ -145,13 +81,8 @@ def _copy_pydicom_elements(source: Any, dataset: DicomDataset) -> None:
 
 
 def _vr_for_tag(tag: Tag, dataset: DicomDataset) -> str:
-    if tag == Tag.PixelData:
-        bits_allocated = dataset.get(Tag.BitsAllocated, 16)
-        try:
-            return "OB" if int(bits_allocated) <= 8 else "OW"
-        except (TypeError, ValueError):
-            return "OW"
-    return _KNOWN_VR.get(tag, "UN")
+    bits_allocated = dataset.get(Tag.BitsAllocated, 16) if tag == Tag.PixelData else None
+    return vr_for_tag(tag, bits_allocated=bits_allocated)
 
 
 def _required_value(dataset: DicomDataset, primary: Tag, fallback: Tag) -> object:
@@ -228,15 +159,39 @@ def _ensure_file_meta(raw: Any, dataset: DicomDataset, pydicom: Any) -> None:
         file_meta.add_new((tag.group, tag.element), _vr_for_tag(tag, dataset), value)
 
 
-def read(path: PathLike, *, stop_before_pixels: bool = False, force: bool = False) -> DicomDataset:
-    """Read a DICOM file through the optional pydicom backend."""
+def read(
+    path: PathLike,
+    *,
+    stop_before_pixels: bool = False,
+    force: bool = False,
+    backend: str = "auto",
+) -> DicomDataset:
+    """Read a DICOM file.
+
+    Parameters
+    ----------
+    path:
+        File system path to the DICOM file.
+    stop_before_pixels:
+        Stop before reading ``PixelData (7FE0,0010)`` for fast metadata scans.
+    force:
+        Read a data set that lacks the preamble / ``DICM`` magic.
+    backend:
+        ``"auto"`` (default) uses pydicom when installed and the native codec
+        otherwise; ``"native"`` always uses the dependency-free codec;
+        ``"pydicom"`` always uses pydicom.
+    """
+
+    if _use_native_backend(backend):
+        return part10.read_file(path, stop_before_pixels=stop_before_pixels, force=force)
 
     try:
         import pydicom  # type: ignore[import-not-found]
     except ImportError as exc:
         raise MissingBackendError(
-            "Reading DICOM files requires the optional pydicom backend. "
-            "Install with `pip install dicomforge[pydicom]`."
+            "Reading DICOM files with backend='pydicom' requires the optional "
+            "pydicom backend. Install with `pip install dicomforge[pydicom]`, "
+            "or use backend='native' for the dependency-free reader."
         ) from exc
 
     raw = pydicom.dcmread(str(path), stop_before_pixels=stop_before_pixels, force=force)
@@ -254,15 +209,50 @@ def write(
     *,
     template: Any = None,
     ensure_file_meta: bool = True,
+    transfer_syntax: Any = None,
+    backend: str = "auto",
 ) -> None:
-    """Write through pydicom using an optional template dataset."""
+    """Write a DICOM file.
+
+    Parameters
+    ----------
+    path:
+        Destination file path.
+    template:
+        Optional pydicom ``Dataset`` to populate (pydicom backend only).
+    ensure_file_meta:
+        Write the preamble, ``DICM`` magic, and File Meta Information group.
+    transfer_syntax:
+        Transfer Syntax UID to encode with (native backend).  Defaults to the
+        dataset's ``TransferSyntaxUID`` if present, else Explicit VR Little
+        Endian.
+    backend:
+        ``"auto"`` (default) uses pydicom when installed and the native codec
+        otherwise; ``"native"`` always uses the dependency-free codec;
+        ``"pydicom"`` always uses pydicom.  A *template* forces the pydicom
+        backend under ``"auto"``.
+    """
+
+    if _use_native_backend(backend, template_present=template is not None):
+        if template is not None:
+            raise DicomValidationError(
+                "The 'template' argument is only supported by the pydicom backend."
+            )
+        part10.write_file(
+            path,
+            dataset,
+            transfer_syntax=transfer_syntax,
+            ensure_file_meta=ensure_file_meta,
+        )
+        return
 
     try:
         import pydicom  # type: ignore[import-not-found]
     except ImportError as exc:
         raise MissingBackendError(
-            "Writing DICOM files requires the optional pydicom backend. "
-            "Install with `pip install dicomforge[pydicom]`."
+            "Writing DICOM files with backend='pydicom' requires the optional "
+            "pydicom backend. Install with `pip install dicomforge[pydicom]`, "
+            "or use backend='native' for the dependency-free writer."
         ) from exc
 
     raw = template if template is not None else pydicom.Dataset()

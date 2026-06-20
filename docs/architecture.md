@@ -19,11 +19,16 @@ heavy capabilities are optional plugins.
   pixel helpers
 - `dicomforge.anonymize`: de-identification profiles, UID remapping, private
   tag policy, and audit reports
+- `dicomforge.dictionary`: shared tag → VR data dictionary and VR category
+  metadata, used by both file IO backends
+- `dicomforge.part10`: dependency-free native DICOM Part 10 reader/writer for
+  uncompressed transfer syntaxes
 - `dicomforge.adapt`: optional adapters for pydicom, NumPy arrays, Pillow
   images/JPEG previews, DICOM JSON, and pynetdicom events
 - `dicomforge.api`: higher-level lazy file and batch helpers for application
   code
-- `dicomforge.io`: optional backend-based file IO
+- `dicomforge.io`: backend-based file IO — native by default, pydicom when
+  installed or required for compressed pixel data
 - `dicomforge.network`: dependency-free association and DIMSE-style command primitives
 - `dicomforge.dicomweb`: dependency-free DICOMweb URL, transport, JSON, and multipart helpers
 - `dicomforge.transport`: optional DICOMweb HTTP transports with requests,

@@ -44,16 +44,37 @@ _DICOM_TO_PYTHON_CODECS = {
 _PYTHON_TO_DICOM_TERMS = {
     "ascii": "ISO_IR 6",
     "us-ascii": "ISO_IR 6",
+    "latin1": "ISO_IR 100",
     "latin_1": "ISO_IR 100",
     "latin-1": "ISO_IR 100",
     "iso8859_1": "ISO_IR 100",
     "iso-8859-1": "ISO_IR 100",
+    "iso8859-2": "ISO_IR 101",
+    "iso-8859-2": "ISO_IR 101",
+    "iso8859-3": "ISO_IR 109",
+    "iso-8859-3": "ISO_IR 109",
+    "iso8859-4": "ISO_IR 110",
+    "iso-8859-4": "ISO_IR 110",
+    "iso8859-5": "ISO_IR 144",
+    "iso-8859-5": "ISO_IR 144",
+    "iso8859-6": "ISO_IR 127",
+    "iso-8859-6": "ISO_IR 127",
+    "iso8859-7": "ISO_IR 126",
+    "iso-8859-7": "ISO_IR 126",
+    "iso8859-8": "ISO_IR 138",
+    "iso-8859-8": "ISO_IR 138",
+    "iso8859-9": "ISO_IR 148",
+    "iso-8859-9": "ISO_IR 148",
+    "iso8859-11": "ISO_IR 166",
+    "iso-8859-11": "ISO_IR 166",
     "utf-8": "ISO_IR 192",
     "utf8": "ISO_IR 192",
     "gb18030": "GB18030",
     "gbk": "GBK",
+    "iso2022-jp": "ISO 2022 IR 87",
     "iso2022_jp": "ISO 2022 IR 87",
     "iso-2022-jp": "ISO 2022 IR 87",
+    "iso2022-kr": "ISO 2022 IR 149",
     "iso2022_kr": "ISO 2022 IR 149",
     "iso-2022-kr": "ISO 2022 IR 149",
 }
@@ -173,7 +194,7 @@ def python_codecs_for_character_set(value: SpecificCharacterSetValue) -> tuple[s
 def preferred_specific_character_set(encoding: str) -> str:
     """Return the DICOM SpecificCharacterSet term for a common Python encoding."""
 
-    normalized = encoding.strip().lower().replace(" ", "-")
+    normalized = encoding.strip().lower().replace("_", "-").replace(" ", "-")
     try:
         return _PYTHON_TO_DICOM_TERMS[normalized]
     except KeyError as exc:

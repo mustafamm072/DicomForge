@@ -2,7 +2,7 @@
 
 [![DOI](https://zenodo.org/badge/1222011062.svg)](https://doi.org/10.5281/zenodo.20192747)
 [![CI](https://github.com/mustafamm072/DicomForge/actions/workflows/ci.yml/badge.svg)](https://github.com/mustafamm072/DicomForge/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)
+![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Core](https://img.shields.io/badge/core-dependency--free-brightgreen)
@@ -33,7 +33,8 @@ This repository is intentionally starting with a small, solid core:
 - Specific Character Set helpers and structured person-name parsing
 - async networking primitives for association lifecycle and DIMSE-style commands
 - DICOMweb query, retrieval, upload, and multipart helpers
-- optional `pydicom` IO backend
+- dependency-free **native DICOM Part 10 file IO** (read/write), with an
+  optional `pydicom` backend for compressed pixel data
 - standard-library tests
 
 ## Why another DICOM library?
@@ -85,7 +86,8 @@ Use DICOMForge when you need:
 - de-identification planning with deterministic UID remapping, date shifting,
   and audit reports
 - mandatory-attribute validation against common image storage SOP Classes
-- pydicom-backed file IO behind a smaller application API
+- native, dependency-free DICOM file IO — or a pydicom-backed backend — behind
+  a smaller application API
 - DICOMweb URL/query, DICOM JSON, STOW multipart, and response parsing helpers
 - async lifecycle and backpressure primitives for DICOM-like service design
 
@@ -107,9 +109,11 @@ dicomforge.codecs          codec capability registry
 dicomforge.charset         Specific Character Set and person-name helpers
 dicomforge.pixels          pixel metadata safety checks and small value helpers
 dicomforge.anonymize       starter de-identification plans and audit reports
+dicomforge.dictionary      tag → VR data dictionary and VR category metadata
+dicomforge.part10          native, dependency-free DICOM Part 10 read/write
 dicomforge.adapt           pydicom, numpy, Pillow, JSON, and pynetdicom adapters
 dicomforge.api             lazy file wrapper and one-call application helpers
-dicomforge.io              optional pydicom read/write adapter
+dicomforge.io              native + optional pydicom read/write backends
 dicomforge.network         async command lifecycle primitives, not DICOM UL PDUs
 dicomforge.dicomweb        QIDO/WADO/STOW helpers with injectable HTTP transport
 dicomforge.transport       optional requests/retry/auth DICOMweb transports
@@ -136,13 +140,41 @@ assert syntax.is_little_endian
 assert syntax.is_explicit_vr
 ```
 
-Optional pydicom-backed reading:
+Read and write DICOM files — no dependencies required:
 
 ```python
-from dicomforge.io import read
+from dicomforge import dcmread, dcmwrite, DicomDataset, SopClassUID, Tag
 
-dataset = read("image.dcm", stop_before_pixels=True)
+# Read any uncompressed DICOM file with the built-in native codec.
+dataset = dcmread("image.dcm", stop_before_pixels=True)
 print(dataset.get("PatientName"))
+
+# Write one back out as a conformant DICOM Part 10 file.
+ds = DicomDataset(
+    {
+        Tag.SOPClassUID: SopClassUID.SecondaryCaptureImageStorage,
+        Tag.SOPInstanceUID: "1.2.3.4.5",
+        Tag.PatientName: "Doe^Jane",
+        Tag.Modality: "OT",
+    }
+)
+dcmwrite("out.dcm", ds)
+```
+
+`dcmread` / `dcmwrite` (aliases of `dicomforge.read` / `write`) select a backend
+automatically: the dependency-free native codec when pydicom is not installed,
+and pydicom when it is. Force a backend explicitly with `backend="native"` or
+`backend="pydicom"`. The native codec handles Implicit/Explicit VR Little
+Endian, Explicit VR Big Endian, and Deflated Explicit VR Little Endian; for
+compressed (encapsulated) pixel data, install `dicomforge[pydicom]` and use
+`backend="pydicom"`.
+
+```python
+from dicomforge import part10
+
+# Serialise directly to/from bytes, choosing the transfer syntax.
+blob = part10.dumps(ds, transfer_syntax="1.2.840.10008.1.2")  # Implicit VR LE
+restored = part10.loads(blob)
 ```
 
 Basic de-identification:
@@ -327,6 +359,14 @@ For a fuller commercial workflow, see
 - **Character-set support is explicit, not magical** — DICOMForge validates
   common declared character sets and person names, but full ISO 2022 edge cases
   and vendor-specific legacy files should still be verified with site fixtures.
+
+- **Native IO covers uncompressed transfer syntaxes** — The native Part 10
+  codec reads and writes Implicit/Explicit VR Little Endian, Explicit VR Big
+  Endian, and Deflated Explicit VR Little Endian. It can *read* encapsulated
+  (compressed) pixel data as opaque fragments, but *writing* compressed pixel
+  data requires `backend="pydicom"`, which re-encodes fragments faithfully.
+  Tags outside the built-in dictionary resolve to VR `UN` under Implicit VR and
+  are preserved as raw bytes rather than corrupted.
 
 ## License
 

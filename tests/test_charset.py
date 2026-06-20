@@ -29,6 +29,12 @@ class CharacterSetTests(unittest.TestCase):
         self.assertEqual(preferred_specific_character_set("utf-8"), "ISO_IR 192")
         self.assertEqual(python_codecs_for_character_set("ISO_IR 192"), ("utf-8",))
 
+    def test_preferred_specific_character_set_accepts_common_python_aliases(self):
+        self.assertEqual(preferred_specific_character_set("utf_8"), "ISO_IR 192")
+        self.assertEqual(preferred_specific_character_set("latin1"), "ISO_IR 100")
+        self.assertEqual(preferred_specific_character_set("iso8859_5"), "ISO_IR 144")
+        self.assertEqual(preferred_specific_character_set("iso_2022_jp"), "ISO 2022 IR 87")
+
     def test_dataset_character_set_reads_tag(self):
         ds = DicomDataset({Tag.SpecificCharacterSet: "ISO_IR 192"})
         self.assertEqual(dataset_character_set(ds), ("ISO_IR 192",))
