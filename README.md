@@ -339,27 +339,30 @@ For a fuller commercial workflow, see
 
 ## Known Issues and Limitations
 
-### Fixed in 0.7.0
-
-- **`Tag.SliceThickness` wrong group/element** — The tag was registered as
-  `(0050,0018)` (DeviceDiameter) instead of the correct `(0018,0050)`.
-  Any dataset lookup using `Tag.SliceThickness` would silently return `None`
-  on real DICOM files. Fixed in v0.7.0.
-
-- **`io._KNOWN_VR` incomplete** — Approximately 30 tags including
-  `AccessionNumber`, all date/time tags (`StudyDate`, `SeriesDate`, …),
-  `InstitutionName`, `ReferringPhysicianName`, `FrameOfReferenceUID`,
-  `PatientIdentityRemoved`, and `DeidentificationMethod` were missing from
-  the internal VR map. Writing these tags via `io.write()` produced VR `"UN"`
-  instead of the correct DICOM VR. Fixed in v0.7.0.
-
-### Current limitations
+Historical bugs and their fixed versions are tracked in
+[CHANGELOG.md](CHANGELOG.md). The list below is limited to current boundaries
+that still affect adopters.
 
 - **`dicomforge.network` is not wire-compatible DIMSE** — The async networking
   module uses a lightweight JSON framing protocol, not the DICOM Upper Layer
   PDU wire format defined in PS3.8. It is not interoperable with real PACS
   systems over the wire. Wire-compatible DIMSE via a `pynetdicom` bridge is
   planned for a `dicomforge-network` package in a future release.
+
+- **Validation is useful, not exhaustive conformance** — `validate_dataset`
+  checks common structural problems, UID grammar, pixel metadata consistency,
+  and burned-in annotation flags. `validate_for_sop_class` checks Type 1 /
+  Type 2 mandatory attributes for CT, MR, Ultrasound, CR, and Secondary Capture
+  image storage SOP Classes. Full IOD module tables, conditional attributes,
+  Type 3 semantics, and site-specific conformance policies remain outside the
+  built-in validator.
+
+- **De-identification is a starter profile, not legal approval** —
+  `AnonymizationPlan.starter_profile()` covers common non-pixel identifying
+  attributes, deterministic UID remapping, private tag handling, date shifting,
+  and audit reports. It is not a complete PS3.15 Basic Application
+  Confidentiality Profile implementation, does not inspect burned-in pixel PHI,
+  and should be paired with local policy, review, and validation.
 
 - **Compressed pixel access is delegated to pydicom** — `adapt.pixel_array`
   can decode compressed transfer syntaxes when pydicom and the relevant pydicom
@@ -378,6 +381,11 @@ For a fuller commercial workflow, see
   data requires `backend="pydicom"`, which re-encodes fragments faithfully.
   Tags outside the built-in dictionary resolve to VR `UN` under Implicit VR and
   are preserved as raw bytes rather than corrupted.
+
+- **DICOMForge is not a medical device or diagnostic viewer** — The library can
+  support regulated software, research tools, and production pipelines, but
+  diagnostic interpretation, clinical display calibration, and medical-device
+  claims require separate validation, documentation, and controls.
 
 ## License
 
