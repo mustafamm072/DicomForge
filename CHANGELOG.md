@@ -5,6 +5,20 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `ValidationIssue`, `validate_dataset_detailed`, and
+  `validate_for_sop_class_detailed` for structured validation output with
+  severity, issue code, tag, label, and SOP Class requirement metadata while
+  preserving the existing string-returning validation APIs.
+- `DicomFile.validate()` convenience method, returning human-readable strings by
+  default and structured `ValidationIssue` objects with `detailed=True`.
+
+### Changed
+- `validate_dataset` now also flags malformed DICOM UID values for common UID
+  attributes (`SOPClassUID`, `SOPInstanceUID`, `StudyInstanceUID`,
+  `SeriesInstanceUID`, and `TransferSyntaxUID`) using the existing PS3.5 UID
+  grammar helper.
+
 ## [0.10.0] — 2026-06-19
 
 ### Added

@@ -34,6 +34,7 @@ Validate a dataset before sending it to a PACS::
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, FrozenSet, List, Mapping, NamedTuple, Optional, Tuple, Union
 
@@ -43,9 +44,38 @@ from dicomforge.errors import MissingBackendError
 from dicomforge.pixels import FrameMetadata, PixelCapability, PixelMetadataError
 from dicomforge.tags import Tag
 from dicomforge.transfer_syntax import TransferSyntax
-from dicomforge.uids import TransferSyntaxUID
+from dicomforge.uids import TransferSyntaxUID, is_valid_uid
 
 PathLike = Union[str, Path]
+
+
+@dataclass(frozen=True)
+class ValidationIssue:
+    """Structured validation issue for applications that need machine-readable output.
+
+    The existing validation helpers still return human-readable strings by
+    default.  Use ``validate_dataset_detailed`` or
+    ``validate_for_sop_class_detailed`` when a caller needs to filter by
+    severity, tag, or issue code without parsing display text.
+    """
+
+    severity: str
+    message: str
+    code: str
+    tag: Optional[Tag] = None
+    label: Optional[str] = None
+    requirement: Optional[str] = None
+    sop_class_uid: Optional[str] = None
+    sop_class_name: Optional[str] = None
+
+    @property
+    def is_error(self) -> bool:
+        """Return whether this issue should block storage or transmission."""
+
+        return self.severity == "error"
+
+    def __str__(self) -> str:
+        return self.message
 
 
 class DicomFile:
@@ -285,6 +315,23 @@ class DicomFile:
         """Return a plain ``{tag_string: value}`` dict for inspection."""
         return self.dataset.to_plain_dict()
 
+    def validate(
+        self, *, detailed: bool = False
+    ) -> Union[List[str], List[ValidationIssue]]:
+        """Validate this file's dataset.
+
+        Parameters
+        ----------
+        detailed:
+            When *False* (default), return the same human-readable strings as
+            :func:`validate_dataset`.  When *True*, return structured
+            :class:`ValidationIssue` objects.
+        """
+
+        if detailed:
+            return validate_dataset_detailed(self.dataset)
+        return validate_dataset(self.dataset)
+
     def __repr__(self) -> str:
         return (
             f"DicomFile(path={self._path.name!r}, "
@@ -357,12 +404,12 @@ def quick_anonymize(
     return report
 
 
-def validate_dataset(dataset: DicomDataset) -> List[str]:
+def validate_dataset_detailed(dataset: DicomDataset) -> List[ValidationIssue]:
     """Return a list of validation issues found in *dataset*.
 
-    An empty list means no issues were detected.  Issues are human-readable
-    strings that describe missing tags, inconsistent metadata, or other
-    problems that would prevent correct storage or display.
+    An empty list means no issues were detected.  Issues are structured
+    :class:`ValidationIssue` objects for production callers that need stable
+    fields for filtering and logging.
 
     Checks performed
     ----------------
@@ -375,12 +422,20 @@ def validate_dataset(dataset: DicomDataset) -> List[str]:
       ``HighBit``, ``PixelRepresentation``, ``PhotometricInterpretation``
     - ``BurnedInAnnotation`` is ``"NO"`` or absent (informational warning)
     """
-    issues: List[str] = []
+    issues: List[ValidationIssue] = []
 
     def _require(tag: Tag, label: str) -> None:
         val = dataset.get(tag)
         if val is None or str(val).strip() == "":
-            issues.append(f"Missing required tag {label} {tag}.")
+            issues.append(
+                ValidationIssue(
+                    severity="error",
+                    message=f"Missing required tag {label} {tag}.",
+                    code="missing-required-tag",
+                    tag=tag,
+                    label=label,
+                )
+            )
 
     _require(Tag.SOPClassUID, "SOPClassUID")
     _require(Tag.SOPInstanceUID, "SOPInstanceUID")
@@ -388,24 +443,81 @@ def validate_dataset(dataset: DicomDataset) -> List[str]:
 
     if dataset.get(Tag.TransferSyntaxUID) is None:
         issues.append(
-            "TransferSyntaxUID (0002,0010) is absent. "
-            "File meta information may be missing or incomplete."
+            ValidationIssue(
+                severity="warning",
+                message=(
+                    "TransferSyntaxUID (0002,0010) is absent. "
+                    "File meta information may be missing or incomplete."
+                ),
+                code="missing-transfer-syntax",
+                tag=Tag.TransferSyntaxUID,
+                label="TransferSyntaxUID",
+            )
         )
+
+    _validate_uid_value(issues, dataset, Tag.SOPClassUID, "SOPClassUID")
+    _validate_uid_value(issues, dataset, Tag.SOPInstanceUID, "SOPInstanceUID")
+    _validate_uid_value(issues, dataset, Tag.StudyInstanceUID, "StudyInstanceUID")
+    _validate_uid_value(issues, dataset, Tag.SeriesInstanceUID, "SeriesInstanceUID")
+    _validate_uid_value(issues, dataset, Tag.TransferSyntaxUID, "TransferSyntaxUID")
 
     if dataset.get(Tag.Rows) is not None:
         try:
             FrameMetadata.from_dataset(dataset)
         except PixelMetadataError as exc:
-            issues.append(f"Pixel metadata inconsistency: {exc}")
+            issues.append(
+                ValidationIssue(
+                    severity="error",
+                    message=f"Pixel metadata inconsistency: {exc}",
+                    code="pixel-metadata-inconsistency",
+                )
+            )
 
     burned = str(dataset.get(Tag.BurnedInAnnotation) or "").strip().upper()
     if burned == "YES":
         issues.append(
-            "BurnedInAnnotation is 'YES' — pixel data may contain PHI. "
-            "Review pixel content before distribution."
+            ValidationIssue(
+                severity="warning",
+                message=(
+                    "BurnedInAnnotation is 'YES' — pixel data may contain PHI. "
+                    "Review pixel content before distribution."
+                ),
+                code="burned-in-annotation",
+                tag=Tag.BurnedInAnnotation,
+                label="BurnedInAnnotation",
+            )
         )
 
     return issues
+
+
+def validate_dataset(dataset: DicomDataset) -> List[str]:
+    """Return human-readable validation issues found in *dataset*.
+
+    This compatibility wrapper keeps the simple list-of-strings API.  Use
+    :func:`validate_dataset_detailed` when severity, tag, and code fields are
+    needed for application logic.
+    """
+
+    return [str(issue) for issue in validate_dataset_detailed(dataset)]
+
+
+def _validate_uid_value(
+    issues: List[ValidationIssue], dataset: DicomDataset, tag: Tag, label: str
+) -> None:
+    value = dataset.get(tag)
+    if value is None or str(value).strip() == "":
+        return
+    if not is_valid_uid(str(value).strip()):
+        issues.append(
+            ValidationIssue(
+                severity="error",
+                message=f"{label} {tag} is not a valid DICOM UID: {value!r}.",
+                code="invalid-uid",
+                tag=tag,
+                label=label,
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -510,10 +622,10 @@ _IOD_PROFILES: Dict[str, _IodProfile] = {
 }
 
 
-def validate_for_sop_class(
+def validate_for_sop_class_detailed(
     dataset: DicomDataset,
     sop_class_uid: Optional[str] = None,
-) -> List[str]:
+) -> List[ValidationIssue]:
     """Validate *dataset* against the mandatory attributes for its SOP Class.
 
     Checks DICOM Type 1 (required, non-empty) and Type 2 (required, may be
@@ -541,51 +653,108 @@ def validate_for_sop_class(
 
     Returns
     -------
-    List[str]
-        Human-readable issue strings, empty when no issues are found.
-        Issues are prefixed with ``[error]`` (Type 1 violations) or
-        ``[warning]`` (Type 2 violations).
+    List[ValidationIssue]
+        Structured issue objects, empty when no issues are found.  Messages are
+        prefixed with ``[error]`` (Type 1 violations) or ``[warning]`` (Type 2
+        violations) for compatibility with the string-only wrapper.
 
     Examples
     --------
     ::
 
-        from dicomforge.api import validate_for_sop_class
+        from dicomforge.api import validate_for_sop_class_detailed
         from dicomforge.uids import SopClassUID
 
-        issues = validate_for_sop_class(dataset, SopClassUID.CTImageStorage)
+        issues = validate_for_sop_class_detailed(dataset, SopClassUID.CTImageStorage)
         for issue in issues:
-            print(issue)
+            print(issue.severity, issue.tag, issue.message)
     """
     uid = sop_class_uid or str(dataset.get(Tag.SOPClassUID) or "").strip()
     if not uid:
-        return ["[error] SOPClassUID is absent — cannot determine which IOD to validate against."]
+        return [
+            ValidationIssue(
+                severity="error",
+                message=(
+                    "[error] SOPClassUID is absent — cannot determine which IOD "
+                    "to validate against."
+                ),
+                code="missing-sop-class",
+                tag=Tag.SOPClassUID,
+                label="SOPClassUID",
+            )
+        ]
 
     profile = _IOD_PROFILES.get(uid)
     if profile is None:
         return [
-            f"[warning] SOP Class {uid!r} is not in the built-in IOD profile table. "
-            "No mandatory-attribute checks were performed."
+            ValidationIssue(
+                severity="warning",
+                message=(
+                    f"[warning] SOP Class {uid!r} is not in the built-in IOD profile table. "
+                    "No mandatory-attribute checks were performed."
+                ),
+                code="unsupported-sop-class-profile",
+                sop_class_uid=uid,
+            )
         ]
 
-    issues: List[str] = []
+    issues: List[ValidationIssue] = []
 
     for tag, label in profile.type1:
         val = dataset.get(tag)
         if val is None or str(val).strip() == "":
             issues.append(
-                f"[error] {profile.name} requires {label} {tag} "
-                "(Type 1 — must be present and non-empty)."
+                ValidationIssue(
+                    severity="error",
+                    message=(
+                        f"[error] {profile.name} requires {label} {tag} "
+                        "(Type 1 — must be present and non-empty)."
+                    ),
+                    code="missing-type1-attribute",
+                    tag=tag,
+                    label=label,
+                    requirement="Type 1",
+                    sop_class_uid=uid,
+                    sop_class_name=profile.name,
+                )
             )
 
     for tag, label in profile.type2:
         if tag not in dataset:
             issues.append(
-                f"[warning] {profile.name} expects {label} {tag} "
-                "(Type 2 — must be present, may be empty)."
+                ValidationIssue(
+                    severity="warning",
+                    message=(
+                        f"[warning] {profile.name} expects {label} {tag} "
+                        "(Type 2 — must be present, may be empty)."
+                    ),
+                    code="missing-type2-attribute",
+                    tag=tag,
+                    label=label,
+                    requirement="Type 2",
+                    sop_class_uid=uid,
+                    sop_class_name=profile.name,
+                )
             )
 
     return issues
+
+
+def validate_for_sop_class(
+    dataset: DicomDataset,
+    sop_class_uid: Optional[str] = None,
+) -> List[str]:
+    """Return human-readable mandatory-attribute issues for a SOP Class.
+
+    This compatibility wrapper preserves the original list-of-strings API.
+    Use :func:`validate_for_sop_class_detailed` for structured severity, tag,
+    and requirement fields.
+    """
+
+    return [
+        str(issue)
+        for issue in validate_for_sop_class_detailed(dataset, sop_class_uid)
+    ]
 
 
 def batch_anonymize(

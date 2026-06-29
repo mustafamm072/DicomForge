@@ -217,12 +217,22 @@ def dumps(
         vr = vr_for_tag(tag, bits_allocated=bits_allocated)
         body += _encode_element(tag, vr, dataset[tag], syntax, charset)
 
+    if not ensure_file_meta:
+        if syntax.uid not in (
+            TransferSyntaxUID.ExplicitVRLittleEndian,
+            TransferSyntaxUID.ImplicitVRLittleEndian,
+        ):
+            raise DicomValidationError(
+                "Bare data sets without File Meta Information can only be "
+                "written in Explicit VR Little Endian or Implicit VR Little "
+                f"Endian; {transfer_syntax!r} cannot be auto-detected by "
+                "loads(..., force=True)."
+            )
+        return bytes(body)
+
     if syntax.deflated:
         compressor = zlib.compressobj(9, zlib.DEFLATED, -zlib.MAX_WBITS)
         body = bytearray(compressor.compress(bytes(body)) + compressor.flush())
-
-    if not ensure_file_meta:
-        return bytes(body)
 
     meta = _build_file_meta(dataset, str(transfer_syntax))
     return _PREAMBLE + _MAGIC + meta + bytes(body)

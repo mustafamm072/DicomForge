@@ -177,11 +177,18 @@ Current scope:
   24 common tags, `.anonymize()`, `.save()`, `.validate()`, and `.tags()`
 - `quick_anonymize(input, output)` — read → de-identify → write in one call
 - `validate_dataset` — structural validation: required tags, pixel metadata
-  consistency, burned-in annotation warning
+  consistency, UID grammar checks for common UID tags, burned-in annotation
+  warning
+- `validate_dataset_detailed` — the same structural checks as
+  `validate_dataset`, returned as structured `ValidationIssue` objects with
+  severity, code, tag, and label fields
 - `validate_for_sop_class` — DICOM Type 1 / Type 2 mandatory attribute
   validation for CT, MR, Ultrasound, CR, and Secondary Capture image storage
   SOP Classes; unrecognised SOP Classes return an informational issue instead
   of raising
+- `validate_for_sop_class_detailed` — the same SOP Class checks as
+  `validate_for_sop_class`, returned as structured `ValidationIssue` objects
+  with severity, code, tag, requirement, SOP Class UID, and SOP Class name
 - `batch_anonymize` — anonymize a list of files; partial failures isolated
 
 Out of scope today:

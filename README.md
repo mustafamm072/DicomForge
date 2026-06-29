@@ -225,13 +225,24 @@ assert dataset.get(Tag.SeriesDate) == "20251203"
 SOP Class mandatory-attribute validation:
 
 ```python
-from dicomforge import DicomDataset, SopClassUID, Tag, validate_for_sop_class
+from dicomforge import (
+    DicomDataset,
+    SopClassUID,
+    Tag,
+    validate_for_sop_class,
+    validate_for_sop_class_detailed,
+)
 
 ct = DicomDataset({Tag.SOPClassUID: SopClassUID.CTImageStorage})
 for issue in validate_for_sop_class(ct):
     print(issue)
 # [error] CT Image Storage requires SOPInstanceUID (0008,0018) (Type 1 — must be present and non-empty).
 # ...
+
+# Structured issues are available for services, CI checks, and dashboards.
+for issue in validate_for_sop_class_detailed(ct):
+    assert issue.severity in {"error", "warning"}
+    print(issue.code, issue.tag, issue.message)
 ```
 
 UID generation and validation:

@@ -13,10 +13,13 @@ from dicomforge.anonymize import (
 )
 from dicomforge.api import (
     DicomFile,
+    ValidationIssue,
     batch_anonymize,
     quick_anonymize,
     validate_dataset,
+    validate_dataset_detailed,
     validate_for_sop_class,
+    validate_for_sop_class_detailed,
 )
 from dicomforge.codecs import (
     Codec,
@@ -125,10 +128,13 @@ __all__ = [
     "UidRemapper",
     # High-level API
     "DicomFile",
+    "ValidationIssue",
     "batch_anonymize",
     "quick_anonymize",
     "validate_dataset",
+    "validate_dataset_detailed",
     "validate_for_sop_class",
+    "validate_for_sop_class_detailed",
     # Codecs
     "Codec",
     "CodecRegistry",

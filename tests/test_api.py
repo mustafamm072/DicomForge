@@ -2,7 +2,14 @@
 
 import unittest
 
-from dicomforge.api import DicomFile, validate_dataset, validate_for_sop_class
+from dicomforge.api import (
+    DicomFile,
+    ValidationIssue,
+    validate_dataset,
+    validate_dataset_detailed,
+    validate_for_sop_class,
+    validate_for_sop_class_detailed,
+)
 from dicomforge.dataset import DicomDataset
 from dicomforge.tags import Tag
 from dicomforge.uids import TransferSyntaxUID
@@ -94,6 +101,23 @@ class ValidateDatasetTests(unittest.TestCase):
         issues = validate_dataset(ds)
         self.assertEqual(issues, [])
 
+    def test_invalid_uid_reported(self):
+        ds = _minimal_dataset(SOPInstanceUID="1.2.03.4")
+        issues = validate_dataset(ds)
+        self.assertTrue(any("not a valid DICOM UID" in issue for issue in issues))
+
+    def test_detailed_validation_keeps_string_compatibility(self):
+        ds = _minimal_dataset(SOPInstanceUID="1.2.03.4")
+        detailed = validate_dataset_detailed(ds)
+        strings = validate_dataset(ds)
+
+        self.assertTrue(all(isinstance(issue, ValidationIssue) for issue in detailed))
+        self.assertEqual([str(issue) for issue in detailed], strings)
+        invalid = [issue for issue in detailed if issue.code == "invalid-uid"][0]
+        self.assertEqual(invalid.severity, "error")
+        self.assertEqual(invalid.tag, Tag.SOPInstanceUID)
+        self.assertTrue(invalid.is_error)
+
 
 class DicomFilePropertiesTests(unittest.TestCase):
     def _make_file_with_dataset(self, dataset: DicomDataset) -> DicomFile:
@@ -160,6 +184,19 @@ class DicomFilePropertiesTests(unittest.TestCase):
         tags = f.tags()
         self.assertIsInstance(tags, dict)
         self.assertIn("(0008,0060)", tags)
+
+    def test_validate_returns_strings_by_default(self):
+        ds = _minimal_dataset(SOPInstanceUID="1.2.03.4")
+        f = self._make_file_with_dataset(ds)
+        issues = f.validate()
+        self.assertTrue(all(isinstance(issue, str) for issue in issues))
+        self.assertTrue(any("not a valid DICOM UID" in issue for issue in issues))
+
+    def test_validate_can_return_structured_issues(self):
+        ds = _minimal_dataset(SOPInstanceUID="1.2.03.4")
+        f = self._make_file_with_dataset(ds)
+        issues = f.validate(detailed=True)
+        self.assertTrue(all(isinstance(issue, ValidationIssue) for issue in issues))
 
     def test_repr_contains_key_info(self):
         ds = _minimal_dataset()
@@ -456,6 +493,17 @@ class ValidateForSopClassTests(unittest.TestCase):
         issues = validate_for_sop_class(ds)
         self.assertTrue(any("[error]" in i and "RescaleSlope" in i for i in issues))
 
+    def test_detailed_type1_issue_includes_tag_and_requirement(self):
+        ds = self._ct_dataset()
+        del ds[Tag.RescaleSlope]
+        issues = validate_for_sop_class_detailed(ds)
+        issue = [i for i in issues if i.tag == Tag.RescaleSlope][0]
+        self.assertEqual(issue.severity, "error")
+        self.assertEqual(issue.code, "missing-type1-attribute")
+        self.assertEqual(issue.requirement, "Type 1")
+        self.assertEqual(issue.sop_class_name, "CT Image Storage")
+        self.assertIn("RescaleSlope", str(issue))
+
     def test_empty_type1_tag_reported_as_error(self):
         ds = self._ct_dataset()
         ds.set(Tag.ImageType, "")
@@ -484,6 +532,16 @@ class ValidateForSopClassTests(unittest.TestCase):
         issues = validate_for_sop_class(ds)
         self.assertTrue(any("[warning]" in i and "StudyDate" in i for i in issues))
 
+    def test_detailed_type2_issue_includes_warning_fields(self):
+        ds = self._ct_dataset()
+        del ds[Tag.StudyDate]
+        issues = validate_for_sop_class_detailed(ds)
+        issue = [i for i in issues if i.tag == Tag.StudyDate][0]
+        self.assertEqual(issue.severity, "warning")
+        self.assertEqual(issue.code, "missing-type2-attribute")
+        self.assertEqual(issue.requirement, "Type 2")
+        self.assertFalse(issue.is_error)
+
     def test_empty_type2_tag_is_not_a_warning(self):
         # Type 2 tags may be empty — only absence triggers a warning
         ds = self._ct_dataset()
@@ -501,6 +559,14 @@ class ValidateForSopClassTests(unittest.TestCase):
         issues = validate_for_sop_class(ds)
         self.assertEqual(len(issues), 1)
         self.assertIn("[warning]", issues[0])
+
+    def test_detailed_unknown_sop_class_has_stable_code(self):
+        ds = self._ct_dataset()
+        ds.set(Tag.SOPClassUID, "9.9.9.9.9")
+        issues = validate_for_sop_class_detailed(ds)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].code, "unsupported-sop-class-profile")
+        self.assertEqual(issues[0].sop_class_uid, "9.9.9.9.9")
 
     def test_missing_sop_class_returns_error(self):
         ds = DicomDataset()

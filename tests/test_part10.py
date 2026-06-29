@@ -207,6 +207,36 @@ class FileFormatTests(unittest.TestCase):
                 self.assertEqual(out.get(Tag.PatientID), "BARE-1")
                 self.assertEqual(out.get(Tag.Rows), 12)
 
+    def test_bare_dataset_rejects_big_endian(self):
+        ds = DicomDataset(
+            {
+                Tag.SOPClassUID: SopClassUID.SecondaryCaptureImageStorage,
+                Tag.SOPInstanceUID: "1.2.3.4.5",
+                Tag.PatientID: "BARE-BE",
+            }
+        )
+        with self.assertRaisesRegex(DicomValidationError, "cannot be auto-detected"):
+            part10.dumps(
+                ds,
+                transfer_syntax=TransferSyntaxUID.ExplicitVRBigEndian,
+                ensure_file_meta=False,
+            )
+
+    def test_bare_dataset_rejects_deflated(self):
+        ds = DicomDataset(
+            {
+                Tag.SOPClassUID: SopClassUID.SecondaryCaptureImageStorage,
+                Tag.SOPInstanceUID: "1.2.3.4.5",
+                Tag.PatientID: "BARE-DEF",
+            }
+        )
+        with self.assertRaisesRegex(DicomValidationError, "cannot be auto-detected"):
+            part10.dumps(
+                ds,
+                transfer_syntax=TransferSyntaxUID.DeflatedExplicitVRLittleEndian,
+                ensure_file_meta=False,
+            )
+
 
 class CharsetTests(unittest.TestCase):
     def test_utf8_person_name_round_trips(self):

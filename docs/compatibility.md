@@ -64,7 +64,7 @@ pip install dicomforge[all]
 | Pillow image display helper | ✅ via `dicomforge.adapt` (requires Pillow) |
 | High-level `DicomFile` API | ✅ via `dicomforge.api` |
 | `quick_anonymize` one-liner | ✅ via `dicomforge.api` |
-| Dataset structural validation | ✅ via `dicomforge.api` |
+| Dataset structural validation | ✅ via `dicomforge.api` (`ValidationIssue` structured output available) |
 | Multi-byte character sets (Japanese, Korean, …) | ✅ Explicit helpers plus pydicom write propagation |
 | IOD/module validation | ◐ `validate_for_sop_class` covers five common image SOP Classes; full module tables planned (1.0) |
 
