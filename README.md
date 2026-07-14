@@ -34,7 +34,9 @@ This repository is intentionally starting with a small, solid core:
 - async networking primitives for association lifecycle and DIMSE-style commands
 - DICOMweb query, retrieval, upload, and multipart helpers
 - dependency-free **native DICOM Part 10 file IO** (read/write), with an
-  optional `pydicom` backend for compressed pixel data
+  optional `pydicom` backend for the broadest real-world coverage
+- dependency-free **RLE Lossless compression and decompression** with one-call
+  dataset transcoding (`compress_pixel_data` / `decompress_pixel_data`)
 - standard-library tests
 
 ## Why another DICOM library?
@@ -88,6 +90,7 @@ Use DICOMForge when you need:
 - mandatory-attribute validation against common image storage SOP Classes
 - native, dependency-free DICOM file IO — or a pydicom-backed backend — behind
   a smaller application API
+- lossless pixel-data compression (RLE) without installing any codec packages
 - DICOMweb URL/query, DICOM JSON, STOW multipart, and response parsing helpers
 - async lifecycle and backpressure primitives for DICOM-like service design
 
@@ -111,6 +114,9 @@ dicomforge.pixels          pixel metadata safety checks and small value helpers
 dicomforge.anonymize       starter de-identification plans and audit reports
 dicomforge.dictionary      tag → VR data dictionary and VR category metadata
 dicomforge.part10          native, dependency-free DICOM Part 10 read/write
+dicomforge.encapsulation   fragment-preserving compressed PixelData value model
+dicomforge.rle             native, dependency-free RLE Lossless frame codec
+dicomforge.transcode       one-call compress/decompress between transfer syntaxes
 dicomforge.adapt           pydicom, numpy, Pillow, JSON, and pynetdicom adapters
 dicomforge.api             lazy file wrapper and one-call application helpers
 dicomforge.io              native + optional pydicom read/write backends
@@ -165,9 +171,10 @@ dcmwrite("out.dcm", ds)
 automatically: the dependency-free native codec when pydicom is not installed,
 and pydicom when it is. Force a backend explicitly with `backend="native"` or
 `backend="pydicom"`. The native codec handles Implicit/Explicit VR Little
-Endian, Explicit VR Big Endian, and Deflated Explicit VR Little Endian; for
-compressed (encapsulated) pixel data, install `dicomforge[pydicom]` and use
-`backend="pydicom"`.
+Endian, Explicit VR Big Endian, Deflated Explicit VR Little Endian, and — for
+compressed pixel data — RLE Lossless end to end, plus faithful fragment
+round-trips for the other encapsulated syntaxes. JPEG-family *encoding and
+decoding* still requires `dicomforge[pydicom]` with the relevant codec plugin.
 
 ```python
 from dicomforge import part10
@@ -176,6 +183,23 @@ from dicomforge import part10
 blob = part10.dumps(ds, transfer_syntax="1.2.840.10008.1.2")  # Implicit VR LE
 restored = part10.loads(blob)
 ```
+
+Lossless pixel-data compression — still no dependencies required:
+
+```python
+from dicomforge import compress_pixel_data, dcmread, dcmwrite, decompress_pixel_data
+
+dataset = dcmread("uncompressed_ct.dcm")
+compress_pixel_data(dataset)          # → RLE Lossless, in place
+dcmwrite("ct_rle.dcm", dataset)       # smaller file, decodable by any toolkit
+
+dataset = dcmread("ct_rle.dcm")
+decompress_pixel_data(dataset)        # → Explicit VR Little Endian raw pixels
+```
+
+The built-in codec covers RLE Lossless (`1.2.840.10008.1.2.5`), the DICOM
+standard's own run-length scheme — a practical lossless choice for archives
+and exports. It round-trips bit-exactly with pydicom in both directions.
 
 Basic de-identification:
 
@@ -364,23 +388,28 @@ that still affect adopters.
   Confidentiality Profile implementation, does not inspect burned-in pixel PHI,
   and should be paired with local policy, review, and validation.
 
-- **Compressed pixel access is delegated to pydicom** — `adapt.pixel_array`
-  can decode compressed transfer syntaxes when pydicom and the relevant pydicom
-  pixel plugin are installed. DICOMForge does not bundle JPEG, JPEG-LS,
-  JPEG 2000, or RLE codec implementations. `adapt.to_jpeg_preview` produces
-  lossy 8-bit display previews, not diagnostic-quality derived images.
+- **JPEG-family pixel codecs are delegated to pydicom** — RLE Lossless is
+  encoded and decoded by the built-in dependency-free codec, but JPEG,
+  JPEG-LS, and JPEG 2000 decode requires pydicom and the relevant pydicom
+  pixel plugin; DICOMForge does not bundle those codec implementations.
+  `adapt.to_jpeg_preview` produces lossy 8-bit display previews, not
+  diagnostic-quality derived images. The pure-Python RLE codec favours
+  portability over raw speed; very large archive jobs may prefer a
+  C-accelerated codec via pydicom.
 
 - **Character-set support is explicit, not magical** — DICOMForge validates
   common declared character sets and person names, but full ISO 2022 edge cases
   and vendor-specific legacy files should still be verified with site fixtures.
 
-- **Native IO covers uncompressed transfer syntaxes** — The native Part 10
-  codec reads and writes Implicit/Explicit VR Little Endian, Explicit VR Big
-  Endian, and Deflated Explicit VR Little Endian. It can *read* encapsulated
-  (compressed) pixel data as opaque fragments, but *writing* compressed pixel
-  data requires `backend="pydicom"`, which re-encodes fragments faithfully.
-  Tags outside the built-in dictionary resolve to VR `UN` under Implicit VR and
-  are preserved as raw bytes rather than corrupted.
+- **Native IO frames compressed data; it only *compresses* RLE** — The native
+  Part 10 codec reads and writes Implicit/Explicit VR Little Endian, Explicit
+  VR Big Endian, and Deflated Explicit VR Little Endian, and reads/writes
+  encapsulated (compressed) pixel data with fragment boundaries and the Basic
+  Offset Table preserved (`EncapsulatedPixelData`). Producing *newly
+  compressed* pixels natively is supported for RLE Lossless via
+  `compress_pixel_data`; JPEG-family encoding requires `backend="pydicom"`
+  with a codec plugin. Tags outside the built-in dictionary resolve to VR `UN`
+  under Implicit VR and are preserved as raw bytes rather than corrupted.
 
 - **DICOMForge is not a medical device or diagnostic viewer** — The library can
   support regulated software, research tools, and production pipelines, but

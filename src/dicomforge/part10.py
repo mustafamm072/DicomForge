@@ -14,10 +14,14 @@ Supported transfer syntaxes (native, no plug-ins required):
   standard-library :mod:`zlib`
 * Explicit VR Big Endian (``1.2.840.10008.1.2.2``)
 
-Encapsulated (compressed) transfer syntaxes carry pixel data this writer does
-not re-encode.  Such files can still be *read* — the compressed pixel stream is
-returned as ``bytes`` — but writing them requires the pydicom backend
-(``backend="pydicom"``), which round-trips fragments faithfully.
+Encapsulated (compressed) transfer syntaxes are also supported at the framing
+level: reading returns the compressed pixel stream as
+:class:`~dicomforge.encapsulation.EncapsulatedPixelData` (a ``bytes`` subclass
+that preserves fragment boundaries and the Basic Offset Table), and writing
+re-emits fragments as an undefined-length item sequence.  This writer frames
+already-compressed fragments — it does not compress pixels itself; use
+:mod:`dicomforge.transcode` for the built-in RLE Lossless codec or the pydicom
+backend for other codecs.
 
 Values are surfaced as natural Python types: ``int``/``float`` for numeric VRs,
 ``str`` for text, ``bytes`` for binary VRs, :class:`~dicomforge.tags.Tag` for
@@ -48,6 +52,7 @@ from dicomforge.dictionary import (
     padding_byte,
     vr_for_tag,
 )
+from dicomforge.encapsulation import EncapsulatedPixelData, as_encapsulated
 from dicomforge.errors import CharacterSetError, DicomValidationError
 from dicomforge.tags import Tag
 from dicomforge.uids import ImplementationUID, TransferSyntaxUID
@@ -201,18 +206,15 @@ def dumps(
         or TransferSyntaxUID.ExplicitVRLittleEndian
     )
     syntax = _Syntax(str(transfer_syntax))
-    if syntax.encapsulated:
-        raise DicomValidationError(
-            "The native writer cannot encode the encapsulated (compressed) "
-            f"transfer syntax {transfer_syntax!r}. Use backend='pydicom' to write "
-            "compressed pixel data."
-        )
 
     charset = dataset.get(Tag.SpecificCharacterSet)
     bits_allocated = dataset.get(Tag.BitsAllocated)
     body = bytearray()
     for tag in sorted(dataset.keys()):
         if ensure_file_meta and tag.group == _FILE_META_GROUP:
+            continue
+        if syntax.encapsulated and tag == Tag.PixelData:
+            body += _encode_encapsulated(dataset[tag], syntax)
             continue
         vr = vr_for_tag(tag, bits_allocated=bits_allocated)
         body += _encode_element(tag, vr, dataset[tag], syntax, charset)
@@ -401,8 +403,10 @@ def _read_sequence(
     return items, pos
 
 
-def _read_encapsulated(data: bytes, pos: int, syntax: _Syntax) -> Tuple[bytes, int]:
-    """Read undefined-length (encapsulated) pixel data into flattened bytes."""
+def _read_encapsulated(
+    data: bytes, pos: int, syntax: _Syntax
+) -> Tuple[EncapsulatedPixelData, int]:
+    """Read undefined-length (encapsulated) pixel data, keeping fragments."""
 
     fragments: List[bytes] = []
     while pos < len(data):
@@ -415,10 +419,20 @@ def _read_encapsulated(data: bytes, pos: int, syntax: _Syntax) -> Tuple[bytes, i
             )
         fragments.append(bytes(data[pos : pos + length]))
         pos += length
-    # Fragment 0 is the Basic Offset Table; the remaining fragments are pixels.
+    # Item 0 is the Basic Offset Table; the remaining items are pixel fragments.
+    # A lone item (non-conformant file without an offset table) is treated as
+    # the pixel fragment itself, matching the pre-0.11 flattened behaviour.
     if len(fragments) > 1:
-        return b"".join(fragments[1:]), pos
-    return (fragments[0] if fragments else b""), pos
+        offsets = _parse_basic_offset_table(fragments[0], syntax)
+        return EncapsulatedPixelData(fragments[1:], offsets), pos
+    return EncapsulatedPixelData(fragments), pos
+
+
+def _parse_basic_offset_table(raw: bytes, syntax: _Syntax) -> Tuple[int, ...]:
+    count = len(raw) // 4
+    if count == 0:
+        return ()
+    return struct.unpack_from(syntax.endian + "I" * count, raw)
 
 
 def _decode_value(vr: str, raw: bytes, syntax: _Syntax, charset: Any) -> Any:
@@ -547,6 +561,55 @@ def _encode_value(tag: Tag, vr: str, value: Any, syntax: _Syntax, charset: Any) 
     if isinstance(value, (bytes, bytearray)):
         return bytes(value)
     raise DicomValidationError(f"Cannot encode value for {tag} with VR {vr!r}.")
+
+
+def _encode_encapsulated(value: Any, syntax: _Syntax) -> bytes:
+    """Encode PixelData for an encapsulated (compressed) transfer syntax.
+
+    The value must already be compressed: an
+    :class:`~dicomforge.encapsulation.EncapsulatedPixelData`, a list/tuple of
+    fragment byte strings (one fragment per frame), or plain ``bytes`` holding
+    a single fragment.  This frames the fragments as an undefined-length item
+    sequence with a Basic Offset Table (PS3.5 Annex A.4); it does not compress
+    pixels — use :mod:`dicomforge.transcode` or ``backend="pydicom"`` for that.
+    """
+
+    encapsulated = as_encapsulated(value)
+    if encapsulated is None:
+        if isinstance(value, (bytes, bytearray)):
+            encapsulated = EncapsulatedPixelData([bytes(value)], (0,))
+        else:
+            raise DicomValidationError(
+                "Encapsulated transfer syntaxes require compressed PixelData as "
+                "EncapsulatedPixelData, a list of fragment bytes, or a single "
+                f"fragment of bytes; got {type(value).__name__}. Compress with "
+                "dicomforge.transcode.compress_pixel_data (RLE Lossless) or use "
+                "backend='pydicom'."
+            )
+
+    endian = syntax.endian
+    out = bytearray()
+    out += struct.pack(endian + "HH", Tag.PixelData.group, Tag.PixelData.element)
+    if syntax.explicit:
+        out += b"OB\x00\x00" + struct.pack(endian + "I", UNDEFINED_LENGTH)
+    else:
+        out += struct.pack(endian + "I", UNDEFINED_LENGTH)
+
+    offset_table = struct.pack(
+        endian + "I" * len(encapsulated.basic_offset_table),
+        *encapsulated.basic_offset_table,
+    )
+    for payload in (offset_table, *encapsulated.fragments):
+        if len(payload) % 2 == 1:
+            payload = payload + b"\x00"
+        out += struct.pack(endian + "HH", ITEM_TAG.group, ITEM_TAG.element)
+        out += struct.pack(endian + "I", len(payload))
+        out += payload
+    out += struct.pack(
+        endian + "HH", SEQUENCE_DELIMITER_TAG.group, SEQUENCE_DELIMITER_TAG.element
+    )
+    out += struct.pack(endian + "I", 0)
+    return bytes(out)
 
 
 def _encode_sequence(value: Any, syntax: _Syntax, charset: Any) -> bytes:

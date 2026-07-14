@@ -182,9 +182,22 @@ class FileFormatTests(unittest.TestCase):
         with self.assertRaisesRegex(DicomValidationError, "DICM"):
             part10.loads(b"not a dicom file at all")
 
-    def test_encapsulated_transfer_syntax_write_rejected(self):
+    def test_encapsulated_write_frames_compressed_fragments(self):
+        # Since 0.11 the native writer frames already-compressed PixelData as an
+        # undefined-length fragment sequence instead of rejecting the syntax.
         ds = _sample_dataset()
-        with self.assertRaisesRegex(DicomValidationError, "encapsulated"):
+        out = part10.loads(
+            part10.dumps(ds, transfer_syntax=TransferSyntaxUID.JPEGBaselineProcess1)
+        )
+        self.assertEqual(
+            out.get(Tag.TransferSyntaxUID), TransferSyntaxUID.JPEGBaselineProcess1
+        )
+        self.assertEqual(out.get(Tag.PixelData), ds.get(Tag.PixelData))
+
+    def test_encapsulated_write_rejects_non_fragment_value(self):
+        ds = _sample_dataset()
+        ds.set(Tag.PixelData, 12345)
+        with self.assertRaisesRegex(DicomValidationError, "EncapsulatedPixelData"):
             part10.dumps(ds, transfer_syntax=TransferSyntaxUID.JPEGBaselineProcess1)
 
     def test_bare_dataset_force_round_trip(self):

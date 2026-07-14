@@ -44,11 +44,15 @@ from __future__ import annotations
 import json as _json
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Iterator, Optional, Union
+from typing import Any, Iterator, List, Optional, Union
 
 from dicomforge.dataset import DicomDataset
 from dicomforge.dicomweb import dataset_from_dicom_json, dataset_to_dicom_json
-from dicomforge.errors import MissingBackendError, UnsupportedTransferSyntaxError
+from dicomforge.errors import (
+    DicomValidationError,
+    MissingBackendError,
+    UnsupportedTransferSyntaxError,
+)
 from dicomforge.pixels import (
     FrameMetadata,
     apply_voi_window,
@@ -58,6 +62,7 @@ from dicomforge.pixels import (
 )
 from dicomforge.tags import Tag
 from dicomforge.transfer_syntax import TransferSyntax
+from dicomforge.uids import TransferSyntaxUID
 
 PathLike = Union[str, Path]
 
@@ -140,9 +145,10 @@ def pixel_array(
     The returned array has shape ``(rows, columns)`` for single-sample images
     or ``(rows, columns, samples)`` for colour images, and the dtype matches
     ``BitsAllocated`` (``uint8``, ``uint16``, ``int16``, ``int32`` for signed
-    data).  Native uncompressed data is decoded directly.  Encapsulated
-    compressed data is delegated to pydicom when pydicom and the required
-    pydicom pixel plugin are installed.
+    data).  Native uncompressed data is decoded directly, and RLE Lossless is
+    decoded by the built-in dependency-free codec (:mod:`dicomforge.rle`).
+    Other encapsulated compressed syntaxes are delegated to pydicom when
+    pydicom and the required pydicom pixel plugin are installed.
 
     Parameters
     ----------
@@ -184,6 +190,11 @@ def pixel_array(
     _validate_frame_index(frame, meta.number_of_frames)
 
     if cap.transfer_syntax.is_compressed:
+        fragments = _rle_fragments_or_none(dataset, meta, cap.transfer_syntax)
+        if fragments is not None:
+            return _rle_pixel_array(
+                fragments[frame], dataset, meta, cap.transfer_syntax, apply_rescale, np
+            )
         arr = _pydicom_pixel_array(dataset, np)
         selected = _select_frame(arr, meta, frame)
         return _apply_rescale_if_requested(selected, dataset, apply_rescale, np)
@@ -200,9 +211,10 @@ def iter_pixel_frames(
     """Yield pixel frames one at a time as ``numpy.ndarray`` objects.
 
     For native uncompressed PixelData, frames are sliced from the source byte
-    buffer without materialising the whole pixel stack.  For compressed
-    syntaxes, decoding is delegated once to pydicom and frames are then yielded
-    from the decoded result.  This keeps the API lightweight while giving
+    buffer without materialising the whole pixel stack.  RLE Lossless frames
+    are decoded one fragment at a time by the built-in codec.  For other
+    compressed syntaxes, decoding is delegated once to pydicom and frames are
+    then yielded from the decoded result.  This keeps the API lightweight while giving
     callers a memory-conscious path for ordinary multiframe native datasets.
 
     Requires ``pip install dicomforge[pixels]``.  Compressed syntaxes also
@@ -225,6 +237,13 @@ def iter_pixel_frames(
     meta = cap.frame_metadata
 
     if cap.transfer_syntax.is_compressed:
+        fragments = _rle_fragments_or_none(dataset, meta, cap.transfer_syntax)
+        if fragments is not None:
+            for fragment in fragments:
+                yield _rle_pixel_array(
+                    fragment, dataset, meta, cap.transfer_syntax, apply_rescale, np
+                )
+            return
         arr = _pydicom_pixel_array(dataset, np)
         for frame_index in range(meta.number_of_frames):
             selected = _select_frame(arr, meta, frame_index)
@@ -618,6 +637,54 @@ def _forge_value_to_pydicom(value: Any, pydicom: Any) -> Any:
     if isinstance(value, list):
         return [_forge_value_to_pydicom(item, pydicom) for item in value]
     return value
+
+
+def _rle_fragments_or_none(
+    dataset: DicomDataset, meta: FrameMetadata, transfer_syntax: TransferSyntax
+) -> Optional[List[bytes]]:
+    """Return per-frame RLE fragments for native decode, or ``None``.
+
+    ``None`` means the native path cannot serve this dataset — not RLE, or the
+    fragment boundaries were lost (flattened multiframe bytes from an external
+    source) — and the caller should delegate to pydicom.
+    """
+
+    if transfer_syntax.uid != TransferSyntaxUID.RLELossless:
+        return None
+    from dicomforge.transcode import rle_frame_fragments
+
+    try:
+        return rle_frame_fragments(dataset, meta)
+    except DicomValidationError:
+        return None
+
+
+def _rle_pixel_array(
+    fragment: bytes,
+    dataset: DicomDataset,
+    meta: FrameMetadata,
+    transfer_syntax: TransferSyntax,
+    apply_rescale: bool,
+    np: Any,
+) -> Any:
+    """Decode one RLE fragment natively and shape it like the native path."""
+
+    from dicomforge.rle import rle_decode_frame
+
+    raw = rle_decode_frame(
+        fragment,
+        rows=meta.rows,
+        columns=meta.columns,
+        samples_per_pixel=meta.samples_per_pixel,
+        bits_allocated=meta.bits_allocated,
+    )
+    flat = np.frombuffer(raw, dtype=_numpy_dtype(meta, transfer_syntax))
+    if meta.samples_per_pixel == 1:
+        arr = flat.reshape(meta.rows, meta.columns)
+    else:
+        # Decoded RLE output is always pixel-interleaved (PlanarConfiguration 0).
+        arr = flat.reshape(meta.rows, meta.columns, meta.samples_per_pixel)
+    return _apply_rescale_if_requested(arr, dataset, apply_rescale, np)
 
 
 def _pydicom_pixel_array(dataset: DicomDataset, np: Any) -> Any:

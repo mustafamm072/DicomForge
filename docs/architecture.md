@@ -21,8 +21,14 @@ heavy capabilities are optional plugins.
   tag policy, and audit reports
 - `dicomforge.dictionary`: shared tag → VR data dictionary and VR category
   metadata, used by both file IO backends
-- `dicomforge.part10`: dependency-free native DICOM Part 10 reader/writer for
-  uncompressed transfer syntaxes
+- `dicomforge.part10`: dependency-free native DICOM Part 10 reader/writer —
+  uncompressed transfer syntaxes end to end, plus encapsulated pixel-data
+  fragment framing for compressed syntaxes
+- `dicomforge.encapsulation`: fragment- and offset-table-preserving
+  `EncapsulatedPixelData` value model for compressed PixelData
+- `dicomforge.rle`: dependency-free RLE Lossless frame codec (PS3.5 Annex G)
+- `dicomforge.transcode`: one-call in-place dataset compression and
+  decompression between uncompressed syntaxes and RLE Lossless
 - `dicomforge.adapt`: optional adapters for pydicom, NumPy arrays, Pillow
   images/JPEG previews, DICOM JSON, and pynetdicom events
 - `dicomforge.api`: higher-level lazy file and batch helpers for application

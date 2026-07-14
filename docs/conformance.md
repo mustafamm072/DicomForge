@@ -108,18 +108,47 @@ Current scope:
   character-set-aware text decoding/encoding
 - File Meta Information group-length fast path plus a lenient fallback for files
   that omit `(0002,0000)`
-- reads encapsulated (compressed) pixel data as opaque fragment bytes
+- reads encapsulated (compressed) pixel data as `EncapsulatedPixelData` — a
+  `bytes` subclass preserving fragment boundaries and the Basic Offset Table
+- writes encapsulated pixel data for any encapsulated transfer syntax by
+  framing already-compressed fragments as an undefined-length item sequence
+  with a Basic Offset Table
 - `force=True` reads bare, preamble-less data sets, auto-detecting Implicit vs
   Explicit VR Little Endian
-- verified bidirectionally interoperable with pydicom across all four supported
-  transfer syntaxes
+- verified bidirectionally interoperable with pydicom across all four
+  uncompressed transfer syntaxes and RLE Lossless
 
 Out of scope for the native backend today:
 
-- writing encapsulated/compressed pixel data (use `backend="pydicom"`)
+- compressing pixels to JPEG-family syntaxes (RLE Lossless is handled by
+  `dicomforge.transcode`; other codecs need `backend="pydicom"` plus plugins)
 - VR inference for tags not in the data dictionary under Implicit VR (preserved
   as raw `UN` bytes rather than corrupted)
-- byte-for-byte preservation of multi-fragment encapsulated pixel data on read
+
+### Compressed pixel data and transcoding
+
+`dicomforge.rle`, `dicomforge.encapsulation`, and `dicomforge.transcode`
+provide the dependency-free compressed pixel path.
+
+Current scope:
+
+- pure-Python RLE Lossless codec per DICOM PS3.5 Annex G: PackBits byte
+  segments, 64-byte RLE header, at most 15 segments per frame
+- 8-, 16-, and 32-bit allocated data; greyscale and colour; pixel-interleaved
+  or colour-by-plane input on encode; decoded output is always little-endian
+  pixel-interleaved (Planar Configuration 0), matching pydicom's convention
+- `compress_pixel_data(dataset)` — uncompressed → RLE Lossless in place, one
+  fragment per frame with a populated Basic Offset Table; Explicit VR Big
+  Endian sources are byte-swapped first
+- `decompress_pixel_data(dataset)` — RLE Lossless → Explicit VR Little Endian
+  in place; a no-op for already-uncompressed datasets
+- bit-exact round-trips verified against pydicom in both directions
+
+Out of scope today:
+
+- JPEG, JPEG-LS, and JPEG 2000 encoding/decoding (pydicom codec plugins)
+- BitsAllocated of 1 (bit-packed) or 64
+- performance parity with C-accelerated codecs (the codec is pure Python)
 
 ### pydicom backend
 
@@ -144,10 +173,12 @@ Current scope:
   including nested sequences, Person Name, UID, DS, and IS value coercion
 - `pixel_array(frame, apply_rescale)` — numpy array from native uncompressed
   PixelData with dtype derived from BitsAllocated and PixelRepresentation;
-  compressed PixelData is delegated to pydicom when pydicom and the relevant
-  pydicom pixel plugin are installed
+  RLE Lossless is decoded by the built-in codec, and other compressed
+  PixelData is delegated to pydicom when pydicom and the relevant pydicom
+  pixel plugin are installed
 - `iter_pixel_frames(apply_rescale)` — frame-by-frame numpy array iterator for
-  native multiframe data, with compressed stacks delegated once to pydicom
+  native multiframe data; RLE frames decode one fragment at a time, and other
+  compressed stacks are delegated once to pydicom
 - `to_pil_image(frame, apply_window)` — PIL Image from a DICOM frame with
   automatic VOI windowing; MONOCHROME1 displayed correctly (inverted), and
   RGB/YBR colour display conversion for supported arrays
@@ -161,8 +192,8 @@ Current scope:
 
 Out of scope today:
 
-- bundled compressed pixel codecs; DICOMForge does not vendor JPEG, JPEG-LS,
-  JPEG 2000, or RLE decoders
+- bundled JPEG, JPEG-LS, or JPEG 2000 codecs (RLE Lossless is the one codec
+  implemented natively, in `dicomforge.rle`)
 - diagnostic-quality lossy image derivation from JPEG previews
 - pynetdicom association management (use `pynetdicom` directly; `adapt` only
   bridges the dataset representation)
@@ -213,10 +244,12 @@ Current scope:
   default codec registry
 - generate 8-bit JPEG preview bytes through the optional Pillow adoption layer
 - all pixel helper functions exported from `dicomforge` top level
+- the default registry includes the built-in `native-rle` codec
+  (decode + encode) alongside the native uncompressed codec
 
 Out of scope today:
 
-- bundled compressed pixel codecs
+- bundled JPEG-family compressed pixel codecs
 - overlays and presentation state behavior
 - clinical interpretation from display previews
 

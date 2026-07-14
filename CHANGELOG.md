@@ -3,9 +3,38 @@
 All notable changes to DicomForge are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.11.0] — 2026-07-13
 
 ### Added
+- **Native, dependency-free RLE Lossless codec** (`dicomforge.rle`):
+  `rle_encode_frame` / `rle_decode_frame` implement DICOM PS3.5 Annex G
+  (PackBits byte segments, 64-byte RLE header) in pure Python for 8/16/32-bit
+  greyscale and colour frames. Compressed pixel data no longer *requires*
+  pydicom — RLE Lossless is the first encapsulated transfer syntax DicomForge
+  reads, writes, encodes, and decodes with zero dependencies. Verified
+  bidirectionally interoperable with pydicom.
+- `dicomforge.transcode` with one-call, in-place dataset transcoding:
+  `compress_pixel_data(dataset)` (uncompressed → RLE Lossless, including
+  Explicit VR Big Endian sources via byte swapping) and
+  `decompress_pixel_data(dataset)` (RLE Lossless → Explicit VR Little Endian;
+  a no-op on already-uncompressed datasets). Both exported at top level.
+- `EncapsulatedPixelData` (`dicomforge.encapsulation`): a `bytes` subclass for
+  compressed `PixelData` that preserves fragment boundaries and the Basic
+  Offset Table. Existing code that treats compressed PixelData as opaque
+  `bytes` keeps working unchanged.
+- **Native encapsulated pixel-data writing**: `part10.dumps` / `write_file` now
+  frame already-compressed fragments as an undefined-length item sequence with
+  a Basic Offset Table for any encapsulated transfer syntax, accepting
+  `EncapsulatedPixelData`, a list of per-frame fragment bytes, or a single
+  fragment of plain bytes. Writing compressed files no longer requires
+  `backend="pydicom"`.
+- The default codec registry now registers a `native-rle` codec
+  (decode + encode), so `check_pixel_capability` passes for RLE Lossless with
+  no optional packages installed.
+- `adapt.pixel_array` and `adapt.iter_pixel_frames` decode RLE Lossless frames
+  natively (fragment by fragment — no full-stack materialisation), falling back
+  to the pydicom bridge only when fragment boundaries are unavailable; other
+  compressed syntaxes continue to delegate to pydicom.
 - `ValidationIssue`, `validate_dataset_detailed`, and
   `validate_for_sop_class_detailed` for structured validation output with
   severity, issue code, tag, label, and SOP Class requirement metadata while
@@ -14,6 +43,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
   default and structured `ValidationIssue` objects with `detailed=True`.
 
 ### Changed
+- `part10.loads` / `read_file` now return encapsulated `PixelData` as
+  `EncapsulatedPixelData` instead of plain flattened `bytes`. The value is a
+  `bytes` subclass with identical byte content, so this is backward compatible;
+  fragment boundaries and the Basic Offset Table are additionally preserved for
+  faithful re-writes and native frame decoding.
 - `validate_dataset` now also flags malformed DICOM UID values for common UID
   attributes (`SOPClassUID`, `SOPInstanceUID`, `StudyInstanceUID`,
   `SeriesInstanceUID`, and `TransferSyntaxUID`) using the existing PS3.5 UID

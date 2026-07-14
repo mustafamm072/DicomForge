@@ -4,10 +4,12 @@ Two interchangeable backends read and write DICOM files:
 
 * ``"native"`` — DicomForge's own dependency-free DICOM Part 10 codec
   (:mod:`dicomforge.part10`).  Handles the uncompressed transfer syntaxes
-  (Implicit/Explicit VR Little Endian, Explicit VR Big Endian) and Deflated
-  Explicit VR Little Endian with no third-party packages.
-* ``"pydicom"`` — the optional :mod:`pydicom` backend, required for compressed
-  (encapsulated) pixel data and the broadest real-world coverage.
+  (Implicit/Explicit VR Little Endian, Explicit VR Big Endian), Deflated
+  Explicit VR Little Endian, and encapsulated (compressed) pixel-data framing
+  with no third-party packages; RLE Lossless is compressed/decompressed
+  natively via :mod:`dicomforge.transcode`.
+* ``"pydicom"`` — the optional :mod:`pydicom` backend, required for JPEG-family
+  pixel codecs and the broadest real-world coverage.
 
 The default ``backend="auto"`` prefers pydicom when it is importable and falls
 back to the native codec otherwise, so reading and writing a ``.dcm`` file now

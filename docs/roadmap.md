@@ -179,6 +179,32 @@ transfer syntax. pydicom remains the backend for compressed pixel data.
   tag → VR data dictionary
 - ✅ Cross-compatibility tests against pydicom in both directions
 
+## 0.11 Native Compressed Pixel Data (RLE Lossless) ✅
+
+Target: read, write, encode, and decode compressed pixel data with zero
+third-party dependencies for at least one real encapsulated transfer syntax,
+removing the hard pydicom requirement for compressed workflows.
+
+Status: implemented in `dicomforge.rle`, `dicomforge.encapsulation`, and
+`dicomforge.transcode`, wired into `part10`, the codec registry, and the
+numpy adoption layer. RLE Lossless was chosen because it is the one DICOM
+encapsulated syntax practical to implement correctly in pure Python; JPEG
+family syntaxes remain delegated to pydicom codec plugins.
+
+- ✅ Pure-Python RLE Lossless codec (PS3.5 Annex G): PackBits segments, RLE
+  header, 8/16/32-bit, greyscale and colour, planar configuration 0 and 1
+  input
+- ✅ `EncapsulatedPixelData` — fragment- and offset-table-preserving `bytes`
+  subclass returned by the native reader (backward compatible)
+- ✅ Native encapsulated pixel-data *writing* for every encapsulated transfer
+  syntax (undefined-length item framing with Basic Offset Table)
+- ✅ `compress_pixel_data` / `decompress_pixel_data` one-call dataset
+  transcoding, including Big Endian source byte swapping
+- ✅ `native-rle` codec in the default registry; `adapt.pixel_array` and
+  `adapt.iter_pixel_frames` decode RLE natively frame-by-frame
+- ✅ Bidirectional pydicom interoperability tests (pydicom decodes our files,
+  we decode pydicom-compressed files)
+
 ## 1.0 Stable Commercial Release
 
 Target: a release that commercial teams can adopt without expecting breaking

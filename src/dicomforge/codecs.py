@@ -75,14 +75,17 @@ _DEFAULT_REGISTRY: Optional[CodecRegistry] = None
 def default_registry() -> CodecRegistry:
     """Return cached codec support detected in the current environment.
 
-    The lightweight core always registers native uncompressed syntaxes.  When
-    pydicom has an available pixel handler for a supported compressed transfer
-    syntax, a pydicom pixel bridge is also registered for that syntax.
+    The lightweight core always registers the native uncompressed syntaxes and
+    the built-in dependency-free RLE Lossless codec.  When pydicom has an
+    available pixel handler for a supported compressed transfer syntax, a
+    pydicom pixel bridge is also registered for that syntax.
     """
 
     global _DEFAULT_REGISTRY
     if _DEFAULT_REGISTRY is None:
-        _DEFAULT_REGISTRY = CodecRegistry([_native_uncompressed_codec()])
+        _DEFAULT_REGISTRY = CodecRegistry(
+            [_native_uncompressed_codec(), _native_rle_codec()]
+        )
     _register_optional_codecs(_DEFAULT_REGISTRY)
     return _DEFAULT_REGISTRY
 
@@ -98,6 +101,17 @@ def _native_uncompressed_codec() -> Codec:
                 TransferSyntaxUID.ExplicitVRBigEndian,
             }
         ),
+        can_decode=True,
+        can_encode=True,
+    )
+
+
+def _native_rle_codec() -> Codec:
+    """The built-in, dependency-free RLE Lossless codec (:mod:`dicomforge.rle`)."""
+
+    return Codec(
+        name="native-rle",
+        transfer_syntax_uids=frozenset({TransferSyntaxUID.RLELossless}),
         can_decode=True,
         can_encode=True,
     )

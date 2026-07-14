@@ -42,6 +42,9 @@ from dicomforge.charset import (
 )
 from dicomforge.dataset import DicomDataset
 from dicomforge.dictionary import KNOWN_VR, vr_for_tag
+from dicomforge.encapsulation import EncapsulatedPixelData
+from dicomforge.rle import rle_decode_frame, rle_encode_frame
+from dicomforge.transcode import compress_pixel_data, decompress_pixel_data
 from dicomforge.io import read, write
 from dicomforge.io import read as dcmread, write as dcmwrite
 from dicomforge import part10
@@ -140,6 +143,12 @@ __all__ = [
     "CodecRegistry",
     "pydicom_pixel_codec",
     "pydicom_pixel_registry",
+    # Compressed pixel data (0.11)
+    "EncapsulatedPixelData",
+    "compress_pixel_data",
+    "decompress_pixel_data",
+    "rle_decode_frame",
+    "rle_encode_frame",
     # Character sets
     "DEFAULT_CHARACTER_SET",
     "PersonName",

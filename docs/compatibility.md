@@ -22,8 +22,8 @@ No deprecated stdlib modules are used.  `asyncio` calls use `get_running_loop()`
 
 | Backend | Install | Status |
 |---------|---------|--------|
-| (none) | built in | Native DICOM Part 10 file read/write for uncompressed transfer syntaxes (`dicomforge.part10`) |
-| pydicom ≥ 2.4 | `pip install dicomforge[pydicom]` | Conversion, compressed pixel bridge, and file IO for compressed transfer syntaxes |
+| (none) | built in | Native DICOM Part 10 file read/write (`dicomforge.part10`), including encapsulated fragment framing, plus RLE Lossless compress/decompress (`dicomforge.rle` / `dicomforge.transcode`) |
+| pydicom ≥ 2.4 | `pip install dicomforge[pydicom]` | Conversion, JPEG-family compressed pixel bridge, broadest real-world file coverage |
 | pydicom ≥ 3.0 | same | Supported — uses `pydicom.dcmwrite()` when available |
 | numpy ≥ 1.23 | `pip install dicomforge[pixels]` | Pixel arrays and frame iteration |
 | Pillow ≥ 10 | `pip install dicomforge[pixels]` | `adapt.to_pil_image`, JPEG preview helpers |
@@ -46,11 +46,13 @@ pip install dicomforge[all]
 | Person Name component parsing | ✅ `dicomforge.charset.PersonName` |
 | Native pixel metadata validation | ✅ Implemented |
 | Pixel array extraction — uncompressed | ✅ via `dicomforge.adapt` (requires numpy) |
-| Pixel array extraction — compressed | ✅ via pydicom bridge plus codec plugins |
+| Pixel array extraction — RLE Lossless | ✅ built-in dependency-free codec (`dicomforge.rle`) |
+| Pixel array extraction — JPEG family | ✅ via pydicom bridge plus codec plugins |
+| Pixel-data compression (RLE Lossless) | ✅ `compress_pixel_data` / `decompress_pixel_data` — no dependencies |
 | Multiframe pixel iteration | ✅ `adapt.iter_pixel_frames` |
 | Color-space conversion | ✅ RGB/YBR display conversion in `to_pil_image` |
 | JPEG preview generation | ✅ `adapt.to_jpeg_preview` / `adapt.from_jpeg_preview` |
-| Native dependency-free file read/write | ✅ `dicomforge.part10` — Implicit/Explicit VR LE, Explicit VR BE, Deflated |
+| Native dependency-free file read/write | ✅ `dicomforge.part10` — Implicit/Explicit VR LE, Explicit VR BE, Deflated, plus encapsulated fragment read/write |
 | pydicom-backed read/write | ✅ Implemented (pydicom 2.x + 3.x) |
 | Starter de-identification plan (48 rules) | ✅ Implemented |
 | Full DICOM PS3.15 profile | 🔲 Planned (1.0) |
@@ -84,7 +86,8 @@ planned milestone before they are suitable.
 | Uncompressed pixel array extraction | ✅ | `adapt.pixel_array` (requires numpy) |
 | Display-ready image from DICOM | ✅ | `adapt.to_pil_image` (numpy + Pillow) |
 | JPEG thumbnails/API previews | ✅ | `adapt.to_jpeg_preview`; lossy 8-bit previews only |
-| Compressed pixel decode | ⚠️ | Requires pydicom plus a codec plugin |
+| RLE Lossless compress/decompress | ✅ | Built in, no dependencies; bit-exact pydicom interop |
+| JPEG-family compressed pixel decode | ⚠️ | Requires pydicom plus a codec plugin |
 | Wire-compatible DIMSE | ❌ | Planned `dicomforge-network`; use `pynetdicom` now |
 | Regulated clinical workflows | ⚠️ | Not a medical device; site validation required |
 | Multi-byte patient names (Japanese, …) | ✅ | Explicit helpers; validate real site fixtures before regulated use |
