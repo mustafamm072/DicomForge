@@ -1,6 +1,6 @@
 # DICOMForge
 
-[![DOI](https://zenodo.org/badge/1222011062.svg)](https://doi.org/10.5281/zenodo.20192747)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20192747.svg)](https://doi.org/10.5281/zenodo.20192747)
 [![CI](https://github.com/mustafamm072/DicomForge/actions/workflows/ci.yml/badge.svg)](https://github.com/mustafamm072/DicomForge/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
