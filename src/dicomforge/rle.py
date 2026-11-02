@@ -126,6 +126,7 @@ def rle_decode_frame(
     columns: int,
     samples_per_pixel: int = 1,
     bits_allocated: int = 8,
+    max_decoded_bytes: int = 512 * 1024 * 1024,
 ) -> bytes:
     """Decode one DICOM RLE Lossless fragment to uncompressed pixel bytes.
 
@@ -137,6 +138,12 @@ def rle_decode_frame(
     bytes_per_sample = _bytes_per_sample(bits_allocated)
     segment_count = samples_per_pixel * bytes_per_sample
     frame_pixels = rows * columns
+    if rows <= 0 or columns <= 0 or not 1 <= segment_count <= RLE_MAX_SEGMENTS:
+        raise DicomValidationError("Invalid RLE frame dimensions or sample count")
+    if max_decoded_bytes <= 0:
+        raise ValueError("max_decoded_bytes must be positive")
+    if frame_pixels * segment_count > max_decoded_bytes:
+        raise DicomValidationError("RLE frame exceeds max_decoded_bytes before allocation")
     if len(fragment) < RLE_HEADER_SIZE:
         raise DicomValidationError(
             f"RLE fragment is {len(fragment)} bytes; the 64-byte RLE header is "

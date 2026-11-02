@@ -55,10 +55,8 @@ from dicomforge.errors import (
 )
 from dicomforge.pixels import (
     FrameMetadata,
-    apply_voi_window,
     is_monochrome,
     needs_inversion,
-    rescale_value,
 )
 from dicomforge.tags import Tag
 from dicomforge.transfer_syntax import TransferSyntax
@@ -111,20 +109,35 @@ def to_pydicom(dataset: DicomDataset, *, write_like_original: bool = False) -> A
         A new pydicom Dataset populated with the same tags and values.
     """
     try:
-        import pydicom  # type: ignore[import-not-found]
+        import pydicom
     except ImportError as exc:
         raise MissingBackendError(
             "to_pydicom() requires the optional pydicom backend. "
             "Install with `pip install dicomforge[pydicom]`."
         ) from exc
 
-    from dicomforge.io import _vr_for_tag  # local import to avoid circular
-
     raw = pydicom.Dataset()
     for tag, value in dataset.items():
-        vr = _vr_for_tag(tag, dataset)
+        if tag.group == 0x0002:
+            if not hasattr(raw, "file_meta"):
+                raw.file_meta = pydicom.dataset.FileMetaDataset()
+            raw.file_meta.add_new((tag.group, tag.element), dataset.vr(tag), value)
+            continue
+        vr = dataset.vr(tag)
         converted = _forge_value_to_pydicom(value, pydicom)
+        lexical = dataset._lexical.get(tag)
+        if lexical is not None and lexical[1] == value:
+            converted = lexical[0].decode("ascii")
+        if tag == Tag.PixelData:
+            from dicomforge.encapsulation import as_encapsulated
+            structured = as_encapsulated(value)
+            if structured is not None:
+                from dicomforge.part10 import _encode_encapsulated, _EXPLICIT_LE
+                converted = _encode_encapsulated(structured, _EXPLICIT_LE)[12:-8]
         raw.add_new((tag.group, tag.element), vr, converted)
+        if tag == Tag.PixelData and dataset.get(Tag.TransferSyntaxUID):
+            raw[(tag.group, tag.element)].is_undefined_length = TransferSyntax.from_uid(
+                str(dataset[Tag.TransferSyntaxUID])).is_encapsulated
     return raw
 
 
@@ -139,6 +152,7 @@ def pixel_array(
     frame: int = 0,
     apply_rescale: bool = False,
     registry: Any = None,
+    max_frame_bytes: int = 512 * 1024 * 1024,
 ) -> Any:
     """Extract one frame of PixelData as a ``numpy.ndarray``.
 
@@ -174,7 +188,7 @@ def pixel_array(
         pydicom cannot decode a compressed frame with the installed plugins.
     """
     try:
-        import numpy as np  # type: ignore[import-not-found]
+        import numpy as np
     except ImportError as exc:
         raise MissingBackendError(
             "pixel_array() requires numpy. "
@@ -187,7 +201,12 @@ def pixel_array(
     active_registry = registry or default_registry()
     cap = check_pixel_capability(dataset, registry=active_registry)
     meta = cap.frame_metadata
+    _check_frame_budget(meta, max_frame_bytes)
     _validate_frame_index(frame, meta.number_of_frames)
+    codec = active_registry.find(cap.transfer_syntax, dataset=dataset)
+    if codec.decode_frame is not None:
+        return _apply_rescale_if_requested(np.asarray(codec.decode_frame(dataset, frame)),
+                                           dataset, apply_rescale, np)
 
     if cap.transfer_syntax.is_compressed:
         fragments = _rle_fragments_or_none(dataset, meta, cap.transfer_syntax)
@@ -195,8 +214,7 @@ def pixel_array(
             return _rle_pixel_array(
                 fragments[frame], dataset, meta, cap.transfer_syntax, apply_rescale, np
             )
-        arr = _pydicom_pixel_array(dataset, np)
-        selected = _select_frame(arr, meta, frame)
+        selected = _pydicom_pixel_array(dataset, np, frame=frame)
         return _apply_rescale_if_requested(selected, dataset, apply_rescale, np)
 
     return _native_pixel_array(dataset, meta, cap.transfer_syntax, frame, apply_rescale, np)
@@ -207,6 +225,7 @@ def iter_pixel_frames(
     *,
     apply_rescale: bool = False,
     registry: Any = None,
+    max_frame_bytes: int = 512 * 1024 * 1024,
 ) -> Iterator[Any]:
     """Yield pixel frames one at a time as ``numpy.ndarray`` objects.
 
@@ -222,7 +241,7 @@ def iter_pixel_frames(
     for the transfer syntax.
     """
     try:
-        import numpy as np  # type: ignore[import-not-found]
+        import numpy as np
     except ImportError as exc:
         raise MissingBackendError(
             "iter_pixel_frames() requires numpy. "
@@ -235,6 +254,13 @@ def iter_pixel_frames(
     active_registry = registry or default_registry()
     cap = check_pixel_capability(dataset, registry=active_registry)
     meta = cap.frame_metadata
+    _check_frame_budget(meta, max_frame_bytes)
+    codec = active_registry.find(cap.transfer_syntax, dataset=dataset)
+    if codec.decode_frame is not None:
+        for index in range(meta.number_of_frames):
+            yield _apply_rescale_if_requested(np.asarray(codec.decode_frame(dataset, index)),
+                                              dataset, apply_rescale, np)
+        return
 
     if cap.transfer_syntax.is_compressed:
         fragments = _rle_fragments_or_none(dataset, meta, cap.transfer_syntax)
@@ -244,9 +270,15 @@ def iter_pixel_frames(
                     fragment, dataset, meta, cap.transfer_syntax, apply_rescale, np
                 )
             return
-        arr = _pydicom_pixel_array(dataset, np)
-        for frame_index in range(meta.number_of_frames):
-            selected = _select_frame(arr, meta, frame_index)
+        raw = to_pydicom(dataset)
+        _ensure_raw_transfer_syntax(raw, str(dataset[Tag.TransferSyntaxUID]))
+        import pydicom
+        if hasattr(pydicom, "pixels"):
+            frames = pydicom.pixels.iter_pixels(raw, raw=True)
+        else:
+            arr = np.asarray(raw.pixel_array)
+            frames = (_select_frame(arr, meta, index) for index in range(meta.number_of_frames))
+        for selected in frames:
             yield _apply_rescale_if_requested(selected, dataset, apply_rescale, np)
         return
 
@@ -279,13 +311,26 @@ def _native_pixel_array(
     else:
         raise TypeError(f"PixelData must be bytes or bytearray, got {type(pixel_data).__name__}")
 
-    dtype = _numpy_dtype(meta, transfer_syntax)
-    total_values = meta.frame_values * meta.number_of_frames
-    flat = np.frombuffer(raw_bytes[: total_values * meta.bytes_per_sample], dtype=dtype)
-
-    frame_start = frame * meta.frame_values
-    frame_end = frame_start + meta.frame_values
-    frame_flat = flat[frame_start:frame_end]
+    if meta.bits_allocated == 1:
+        start = frame * meta.frame_values
+        first, last = start // 8, (start + meta.frame_values + 7) // 8
+        unpacked = np.unpackbits(np.frombuffer(raw_bytes[first:last], dtype=np.uint8),
+                                 bitorder="little")
+        frame_flat = unpacked[start % 8:start % 8 + meta.frame_values]
+    elif meta.photometric_interpretation == "YBR_FULL_422":
+        if meta.bits_allocated != 8 or meta.columns % 2:
+            raise DicomValidationError("Native YBR_FULL_422 requires 8-bit even-column images")
+        pairs = np.frombuffer(raw_bytes, dtype=np.uint8, count=meta.frame_pixels * 2,
+                              offset=frame * meta.expected_frame_bytes).reshape(-1, 4)
+        expanded = np.empty((len(pairs), 2, 3), dtype=np.uint8)
+        expanded[:, 0, 0], expanded[:, 1, 0] = pairs[:, 0], pairs[:, 1]
+        expanded[:, :, 1], expanded[:, :, 2] = pairs[:, 2, None], pairs[:, 3, None]
+        frame_flat = expanded.reshape(-1)
+    else:
+        dtype = _numpy_dtype(meta, transfer_syntax)
+        frame_flat = np.frombuffer(raw_bytes, dtype=dtype, count=meta.frame_values,
+                                   offset=frame * meta.expected_frame_bytes)
+        frame_flat = _normalize_stored_bits(frame_flat, meta, np)
 
     if meta.samples_per_pixel == 1:
         arr = frame_flat.reshape(meta.rows, meta.columns)
@@ -345,7 +390,7 @@ def to_pil_image(
         If Pillow (PIL) or numpy is not installed.
     """
     try:
-        from PIL import Image  # type: ignore[import-not-found]
+        from PIL import Image
     except ImportError as exc:
         raise MissingBackendError(
             "to_pil_image() requires Pillow. "
@@ -353,14 +398,15 @@ def to_pil_image(
         ) from exc
 
     try:
-        import numpy as np  # type: ignore[import-not-found]
+        import numpy as np
     except ImportError as exc:
         raise MissingBackendError(
             "to_pil_image() requires numpy. "
             "Install with `pip install dicomforge[pixels]`."
         ) from exc
 
-    arr = pixel_array(dataset, frame=frame)
+    arr = pixel_array(dataset, frame=frame, apply_rescale=True
+                      if is_monochrome(str(dataset.get(Tag.PhotometricInterpretation))) else False)
     meta = FrameMetadata.from_dataset(dataset)
     photometric = meta.photometric_interpretation
 
@@ -371,11 +417,11 @@ def to_pil_image(
             width = window_width
             if center is None:
                 raw_center = dataset.get(Tag.WindowCenter)
-                center = float(raw_center) if raw_center is not None else float(arr_float.mean())
+                center = float(_first(raw_center)) if raw_center is not None else float(arr_float.mean())
             if width is None:
                 raw_width = dataset.get(Tag.WindowWidth)
                 width = (
-                    float(raw_width)
+                    float(_first(raw_width))
                     if raw_width is not None
                     else float(arr_float.max() - arr_float.min()) or 1.0
                 )
@@ -389,7 +435,7 @@ def to_pil_image(
         arr_uint8 = arr_windowed.clip(0, 255).astype(np.uint8)
         if needs_inversion(photometric):
             arr_uint8 = 255 - arr_uint8
-        return Image.fromarray(arr_uint8, mode="L")
+        return Image.fromarray(arr_uint8)
 
     # Colour path — convert YBR colour spaces to RGB before PIL sees the data.
     # PIL treats every (rows, cols, 3) uint8 array as RGB; passing raw YBR
@@ -402,7 +448,7 @@ def to_pil_image(
         vmax = float(arr.max())
         span = vmax - vmin or 1.0
         arr = ((arr.astype(np.float64) - vmin) / span * 255).clip(0, 255).astype(np.uint8)
-    return Image.fromarray(arr, mode="RGB")
+    return Image.fromarray(arr)
 
 
 def to_jpeg_preview(
@@ -491,7 +537,7 @@ def from_jpeg_preview(data: bytes, *, mode: Optional[str] = None) -> Any:
     """
 
     try:
-        from PIL import Image  # type: ignore[import-not-found]
+        from PIL import Image
     except ImportError as exc:
         raise MissingBackendError(
             "from_jpeg_preview() requires Pillow. "
@@ -566,7 +612,7 @@ def from_pynetdicom_event(event: Any) -> DicomDataset:
         If the event carries neither a ``dataset`` nor ``identifier``.
     """
     try:
-        import pynetdicom  # type: ignore[import-not-found]  # noqa: F401
+        import pynetdicom  # noqa: F401
     except ImportError as exc:
         raise MissingBackendError(
             "from_pynetdicom_event() requires pynetdicom. "
@@ -590,7 +636,20 @@ def from_pynetdicom_event(event: Any) -> DicomDataset:
 def _copy_pydicom_to_forge(source: Any, dataset: DicomDataset) -> None:
     for element in source:
         value = _pydicom_value_to_forge(element.value)
-        dataset.set((element.tag.group, element.tag.element), value)
+        tag = Tag(element.tag.group, element.tag.element)
+        if tag == Tag.PixelData and getattr(element, "is_undefined_length", False):
+            from dicomforge.part10 import _read_encapsulated, _EXPLICIT_LE
+            import struct
+            value, _ = _read_encapsulated(bytes(element.value) + struct.pack(
+                "<HHI", 0xFFFE, 0xE0DD, 0), 0, _EXPLICIT_LE)
+        dataset.set(tag, value, vr=element.VR)
+        if element.VR in {"DS", "IS"} and element.value not in (None, ""):
+            from dicomforge.dataset import _deep_copy_value
+            original = element.value
+            items = original if type(original).__name__ == "MultiValue" or isinstance(
+                original, (list, tuple)) else [original]
+            text = "\\".join(str(getattr(item, "original_string", item)) for item in items)
+            dataset._lexical[tag] = (text.encode("ascii"), _deep_copy_value(value))
 
 
 def _pydicom_value_to_forge(value: Any) -> Any:
@@ -598,7 +657,7 @@ def _pydicom_value_to_forge(value: Any) -> Any:
     type_name = type(value).__name__
     module = type(value).__module__ or ""
     if "pydicom" in module:
-        if type_name == "Dataset":
+        if type_name in {"Dataset", "FileDataset"}:
             child = DicomDataset()
             _copy_pydicom_to_forge(value, child)
             return child
@@ -612,7 +671,9 @@ def _pydicom_value_to_forge(value: Any) -> Any:
             return float(value)
         if type_name == "IS":
             return int(value)
-    if isinstance(value, list):
+        if type_name == "MultiValue":
+            return [_pydicom_value_to_forge(item) for item in value]
+    if isinstance(value, (list, tuple)):
         return [_pydicom_value_to_forge(item) for item in value]
     return value
 
@@ -624,17 +685,15 @@ def _forge_value_to_pydicom(value: Any, pydicom: Any) -> Any:
     if isinstance(value, PersonName):
         return value.to_dicom_string()
     if isinstance(value, DicomDataset):
-        from dicomforge.io import _vr_for_tag
-
         raw = pydicom.Dataset()
         for tag, v in value.items():
             raw.add_new(
                 (tag.group, tag.element),
-                _vr_for_tag(tag, value),
+                value.vr(tag),
                 _forge_value_to_pydicom(v, pydicom),
             )
-        return pydicom.Sequence([raw])
-    if isinstance(value, list):
+        return raw
+    if isinstance(value, (list, tuple)):
         return [_forge_value_to_pydicom(item, pydicom) for item in value]
     return value
 
@@ -679,6 +738,7 @@ def _rle_pixel_array(
         bits_allocated=meta.bits_allocated,
     )
     flat = np.frombuffer(raw, dtype=_numpy_dtype(meta, transfer_syntax))
+    flat = _normalize_stored_bits(flat, meta, np)
     if meta.samples_per_pixel == 1:
         arr = flat.reshape(meta.rows, meta.columns)
     else:
@@ -687,7 +747,7 @@ def _rle_pixel_array(
     return _apply_rescale_if_requested(arr, dataset, apply_rescale, np)
 
 
-def _pydicom_pixel_array(dataset: DicomDataset, np: Any) -> Any:
+def _pydicom_pixel_array(dataset: DicomDataset, np: Any, *, frame: int = 0) -> Any:
     try:
         raw = to_pydicom(dataset)
     except MissingBackendError as exc:
@@ -700,7 +760,11 @@ def _pydicom_pixel_array(dataset: DicomDataset, np: Any) -> Any:
     syntax_uid = str(dataset.get(Tag.TransferSyntaxUID) or "")
     _ensure_raw_transfer_syntax(raw, syntax_uid)
     try:
-        decoded = raw.pixel_array
+        import pydicom
+        if hasattr(pydicom, "pixels"):
+            decoded = pydicom.pixels.pixel_array(raw, index=frame, raw=True)
+        else:
+            decoded = _select_frame(raw.pixel_array, FrameMetadata.from_dataset(dataset), frame)
     except Exception as exc:
         raise UnsupportedTransferSyntaxError(
             "pydicom could not decode compressed PixelData for transfer syntax "
@@ -754,15 +818,15 @@ def _apply_rescale_if_requested(
     np: Any,
 ) -> Any:
     if apply_rescale:
-        slope = float(dataset.get(Tag.RescaleSlope) or 1)
-        intercept = float(dataset.get(Tag.RescaleIntercept) or 0)
+        slope = float(_first(dataset.get(Tag.RescaleSlope, 1)))
+        intercept = float(_first(dataset.get(Tag.RescaleIntercept, 0)))
         return arr.astype(np.float64) * slope + intercept
     copy = getattr(arr, "copy", None)
     return copy() if callable(copy) else arr
 
 
 def _numpy_dtype(meta: FrameMetadata, transfer_syntax: TransferSyntax) -> Any:
-    import numpy as np  # type: ignore[import-not-found]
+    import numpy as np
 
     if meta.bits_allocated == 8:
         return np.dtype(np.int8 if meta.is_signed else np.uint8)
@@ -770,6 +834,8 @@ def _numpy_dtype(meta: FrameMetadata, transfer_syntax: TransferSyntax) -> Any:
         dtype = np.dtype(np.int16 if meta.is_signed else np.uint16)
     elif meta.bits_allocated == 32:
         dtype = np.dtype(np.int32 if meta.is_signed else np.uint32)
+    elif meta.bits_allocated == 64:
+        dtype = np.dtype(np.int64 if meta.is_signed else np.uint64)
     else:
         raise ValueError(
             f"Unsupported BitsAllocated={meta.bits_allocated} for numpy dtype mapping."
@@ -830,6 +896,10 @@ def _ybr_to_rgb_if_needed(arr: Any, photometric: str, np: Any) -> Any:
 
 def _apply_window_numpy(arr: Any, center: float, width: float, np: Any) -> Any:
     """Vectorised linear VOI window application."""
+    from dicomforge.pixels import voi_window_bounds
+    voi_window_bounds(center, width)
+    if width == 1:
+        return np.where(arr <= center - 0.5, 0.0, 255.0)
     lower = center - 0.5 - (width - 1) / 2.0
     upper = center - 0.5 + (width - 1) / 2.0
     out = np.where(
@@ -842,3 +912,24 @@ def _apply_window_numpy(arr: Any, center: float, width: float, np: Any) -> Any:
         ),
     )
     return out
+
+
+def _first(value: Any) -> Any:
+    return value[0] if isinstance(value, (list, tuple)) and value else value
+
+
+def _check_frame_budget(meta: FrameMetadata, limit: int) -> None:
+    if limit <= 0:
+        raise ValueError("max_frame_bytes must be positive")
+    if meta.frame_values * max(1, meta.bytes_per_sample) > limit:
+        raise DicomValidationError("Decoded frame exceeds max_frame_bytes")
+
+
+def _normalize_stored_bits(arr: Any, meta: FrameMetadata, np: Any) -> Any:
+    """Mask unused bits and sign-extend at BitsStored, not BitsAllocated."""
+    shift = meta.bits_allocated - meta.bits_stored
+    if not shift:
+        return arr
+    if meta.is_signed:
+        return (arr << shift) >> shift
+    return arr & ((1 << meta.bits_stored) - 1)

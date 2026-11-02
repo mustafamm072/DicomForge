@@ -56,7 +56,7 @@ class EncapsulatedPixelData(bytes):
         instance._basic_offset_table = tuple(int(v) for v in basic_offset_table)
         return instance
 
-    def __reduce__(self):  # type: ignore[override]
+    def __reduce__(self) -> tuple[object, tuple[list[bytes], list[int]]]:
         # The default bytes reduce protocol would rebuild from the joined byte
         # string and lose (or corrupt) the fragment structure under pickle,
         # copy.copy, and copy.deepcopy.

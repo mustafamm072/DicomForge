@@ -36,12 +36,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, List, Mapping, NamedTuple, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple, Union
 
 from dicomforge.anonymize import AnonymizationPlan, AnonymizationReport, PrivateTagAction
-from dicomforge.dataset import DicomDataset
-from dicomforge.errors import MissingBackendError
-from dicomforge.pixels import FrameMetadata, PixelCapability, PixelMetadataError
+from dicomforge.dataset import DicomDataset, as_dataset
+from dicomforge.pixels import FrameMetadata, PixelCapability, PixelMetadataError, assert_pixel_data_length
 from dicomforge.tags import Tag
 from dicomforge.transfer_syntax import TransferSyntax
 from dicomforge.uids import TransferSyntaxUID, is_valid_uid
@@ -67,6 +66,9 @@ class ValidationIssue:
     requirement: Optional[str] = None
     sop_class_uid: Optional[str] = None
     sop_class_name: Optional[str] = None
+    path: Tuple[object, ...] = ()
+    assessed: bool = True
+    standard: Optional[str] = None
 
     @property
     def is_error(self) -> bool:
@@ -90,13 +92,13 @@ class DicomFile:
     path:
         Path to the DICOM file.
     stop_before_pixels:
-        When *True* the pydicom backend skips reading ``PixelData``,
+        When *True* the native reader stops before ``PixelData``,
         making metadata-only access significantly faster for large files.
 
     Raises
     ------
     MissingBackendError
-        On first dataset access, if pydicom is not installed.
+        Only when an explicitly requested optional integration is unavailable.
     """
 
     def __init__(self, path: PathLike, *, stop_before_pixels: bool = False) -> None:
@@ -305,11 +307,22 @@ class DicomFile:
     def save(self, path: PathLike) -> None:
         """Write the (possibly modified) dataset to *path*.
 
-        Requires ``pip install dicomforge[pydicom]``.
+        Uses the dependency-free native backend by default.
         """
         from dicomforge.io import write
 
         write(path, self.dataset)
+
+    def load_pixels(self) -> DicomDataset:
+        """Reload a metadata-only file while retaining edited metadata values."""
+        current = self.dataset
+        if current.is_partial:
+            from dicomforge.io import read
+            full = read(self._path)
+            for element in current.elements():
+                full.set(element.tag, element.value, vr=element.vr)
+            self._dataset = full
+        return self.dataset
 
     def tags(self) -> Dict[str, Any]:
         """Return a plain ``{tag_string: value}`` dict for inspection."""
@@ -333,11 +346,7 @@ class DicomFile:
         return validate_dataset(self.dataset)
 
     def __repr__(self) -> str:
-        return (
-            f"DicomFile(path={self._path.name!r}, "
-            f"modality={self.modality!r}, "
-            f"patient={self.patient_name!r})"
-        )
+        return f"DicomFile(loaded={self._dataset is not None})"
 
 
 # ---------------------------------------------------------------------------
@@ -352,10 +361,11 @@ def quick_anonymize(
     uid_salt: str = "dicomforge",
     private_tag_action: PrivateTagAction = PrivateTagAction.REMOVE,
     replacements: Optional[Mapping[Any, Any]] = None,
+    overwrite: bool = False,
 ) -> AnonymizationReport:
     """Read, anonymize, and write a DICOM file in one call.
 
-    Requires ``pip install dicomforge[pydicom]``.
+    Uses the dependency-free native backend by default.
 
     Parameters
     ----------
@@ -392,6 +402,8 @@ def quick_anonymize(
         print(f"Removed {report.private_tags_removed} private tags")
     """
     from dicomforge.io import read, write
+    if Path(input_path).resolve() == Path(output_path).resolve():
+        raise ValueError("De-identification output must not replace the source file")
 
     dataset = read(input_path)
     plan = AnonymizationPlan.starter_profile(
@@ -400,7 +412,7 @@ def quick_anonymize(
         private_tag_action=private_tag_action,
     )
     report = plan.apply_with_report(dataset)
-    write(output_path, dataset)
+    write(output_path, dataset, overwrite=overwrite)
     return report
 
 
@@ -422,11 +434,12 @@ def validate_dataset_detailed(dataset: DicomDataset) -> List[ValidationIssue]:
       ``HighBit``, ``PixelRepresentation``, ``PhotometricInterpretation``
     - ``BurnedInAnnotation`` is ``"NO"`` or absent (informational warning)
     """
+    dataset = as_dataset(dataset)
     issues: List[ValidationIssue] = []
 
     def _require(tag: Tag, label: str) -> None:
         val = dataset.get(tag)
-        if val is None or str(val).strip() == "":
+        if _empty_value(val):
             issues.append(
                 ValidationIssue(
                     severity="error",
@@ -463,7 +476,11 @@ def validate_dataset_detailed(dataset: DicomDataset) -> List[ValidationIssue]:
 
     if dataset.get(Tag.Rows) is not None:
         try:
-            FrameMetadata.from_dataset(dataset)
+            metadata = FrameMetadata.from_dataset(dataset)
+            pixels = dataset.get(Tag.PixelData)
+            uid = str(dataset.get(Tag.TransferSyntaxUID) or TransferSyntaxUID.ExplicitVRLittleEndian)
+            if isinstance(pixels, (bytes, bytearray)) and not TransferSyntax.from_uid(uid).is_compressed:
+                assert_pixel_data_length(pixels, metadata)
         except PixelMetadataError as exc:
             issues.append(
                 ValidationIssue(
@@ -512,7 +529,7 @@ def _validate_uid_value(
         issues.append(
             ValidationIssue(
                 severity="error",
-                message=f"{label} {tag} is not a valid DICOM UID: {value!r}.",
+                message=f"{label} {tag} is not a valid DICOM UID.",
                 code="invalid-uid",
                 tag=tag,
                 label=label,
@@ -533,7 +550,7 @@ class _IodProfile(NamedTuple):
     # A missing or empty value is reported as an error.
     type1: Tuple[Tuple[Tag, str], ...]
     # Tags that MUST be present, but may be empty (DICOM Type 2).
-    # A missing value is reported as a warning.
+    # A missing value is reported as an error.
     type2: Tuple[Tuple[Tag, str], ...]
 
 
@@ -607,16 +624,10 @@ _IOD_PROFILES: Dict[str, _IodProfile] = {
             (Tag.BodyPartExamined, "BodyPartExamined"),
         ),
     ),
-    # Secondary Capture Image Storage — no pixel requirements from the IOD,
-    # but the common patient/study/series/instance baseline still applies.
+    # Secondary Capture includes the image-pixel module baseline.
     "1.2.840.10008.5.1.4.1.1.7": _IodProfile(
         name="Secondary Capture Image Storage",
-        type1=(
-            (Tag.SOPClassUID, "SOPClassUID"),
-            (Tag.SOPInstanceUID, "SOPInstanceUID"),
-            (Tag.StudyInstanceUID, "StudyInstanceUID"),
-            (Tag.SeriesInstanceUID, "SeriesInstanceUID"),
-        ),
+        type1=_COMMON_TYPE1,
         type2=_COMMON_TYPE2,
     ),
 }
@@ -655,7 +666,7 @@ def validate_for_sop_class_detailed(
     -------
     List[ValidationIssue]
         Structured issue objects, empty when no issues are found.  Messages are
-        prefixed with ``[error]`` (Type 1 violations) or ``[warning]`` (Type 2
+        prefixed with ``[error]`` (Type 1 violations) or ``[error]`` (Type 2
         violations) for compatibility with the string-only wrapper.
 
     Examples
@@ -669,6 +680,7 @@ def validate_for_sop_class_detailed(
         for issue in issues:
             print(issue.severity, issue.tag, issue.message)
     """
+    dataset = as_dataset(dataset)
     uid = sop_class_uid or str(dataset.get(Tag.SOPClassUID) or "").strip()
     if not uid:
         return [
@@ -695,6 +707,7 @@ def validate_for_sop_class_detailed(
                 ),
                 code="unsupported-sop-class-profile",
                 sop_class_uid=uid,
+                assessed=False,
             )
         ]
 
@@ -702,7 +715,7 @@ def validate_for_sop_class_detailed(
 
     for tag, label in profile.type1:
         val = dataset.get(tag)
-        if val is None or str(val).strip() == "":
+        if _empty_value(val):
             issues.append(
                 ValidationIssue(
                     severity="error",
@@ -723,9 +736,9 @@ def validate_for_sop_class_detailed(
         if tag not in dataset:
             issues.append(
                 ValidationIssue(
-                    severity="warning",
+                    severity="error",
                     message=(
-                        f"[warning] {profile.name} expects {label} {tag} "
+                        f"[error] {profile.name} requires {label} {tag} "
                         "(Type 2 — must be present, may be empty)."
                     ),
                     code="missing-type2-attribute",
@@ -737,6 +750,75 @@ def validate_for_sop_class_detailed(
                 )
             )
 
+    return issues
+
+
+def _empty_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (bytes, bytearray, list, tuple, DicomDataset)):
+        return len(value) == 0
+    return False
+
+
+def validate_elements_detailed(dataset: DicomDataset) -> List[ValidationIssue]:
+    """VR/VM and UID checks with indexed paths, separate from IOD conformance.
+
+    Empty required attributes are checked by the SOP profile, not this lint.
+    Private UN values remain opaque. An unrecognized public VR is not a pass.
+    """
+    from dicomforge.dictionary import NUMERIC_VR_FORMATS, standard_dictionary
+    from collections.abc import Sequence
+    dataset = as_dataset(dataset)
+    issues: List[ValidationIssue] = []
+    for path, element in dataset.iter_paths():
+        value, vr, tag = element.value, element.vr, element.tag
+        code = None
+        if _empty_value(value):
+            continue
+        values = list(value) if isinstance(value, Sequence) and not isinstance(
+            value, (str, bytes, bytearray)
+        ) else [value]
+        if vr == "UI" and any(not is_valid_uid(str(item)) for item in values):
+            code = "invalid-element-uid"
+        elif vr in NUMERIC_VR_FORMATS:
+            import math
+            import struct
+            try:
+                fmt = NUMERIC_VR_FORMATS[vr]
+                for item in values:
+                    if vr in {"FL", "FD"}:
+                        if not math.isfinite(float(item)):
+                            raise ValueError
+                    struct.pack("<" + fmt, item)
+            except (TypeError, ValueError, OverflowError, struct.error):
+                code = "invalid-numeric-value"
+        elif vr == "SQ" and (not isinstance(value, (list, tuple)) or any(
+            not isinstance(item, DicomDataset) for item in values
+        )):
+            code = "invalid-sequence-value"
+        entry = standard_dictionary().get(f"{tag.group:04X}{tag.element:04X}")
+        if code is None and entry is not None and vr != "SQ":
+            vm = entry[2]
+            count = len(values)
+            try:
+                if "-" not in vm:
+                    valid_vm = count == int(vm)
+                else:
+                    low, high = vm.split("-", 1)
+                    valid_vm = count >= int(low) and (
+                        high == "n" or (high.endswith("n") and count % int(high[:-1]) == 0)
+                        or (high.isdigit() and count <= int(high)))
+                if not valid_vm:
+                    code = "invalid-value-multiplicity"
+            except ValueError:
+                pass
+        if code:
+            issues.append(ValidationIssue("error", code.replace("-", " "), code,
+                                           tag=tag, path=path,
+                                           standard="PS3.5 VR/VM; dictionary=pydicom-3.0.2"))
     return issues
 
 
@@ -783,10 +865,17 @@ def batch_anonymize(
     """
     output_directory = Path(output_dir)
     results: Dict[str, Union[AnonymizationReport, Exception]] = {}
+    destinations: Dict[Path, List[Path]] = {}
+    for raw_path in input_paths:
+        source = Path(raw_path)
+        destinations.setdefault((output_directory / source.name).resolve(), []).append(source)
+    source_paths = {Path(path).resolve() for path in input_paths}
     for raw_path in input_paths:
         src = Path(raw_path)
         dest = output_directory / src.name
         try:
+            if len(destinations[dest.resolve()]) > 1 or dest.resolve() in source_paths:
+                raise ValueError("Batch destination collision; use release_collection for UID naming")
             report = quick_anonymize(
                 src,
                 dest,

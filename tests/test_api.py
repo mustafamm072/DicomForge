@@ -202,8 +202,9 @@ class DicomFilePropertiesTests(unittest.TestCase):
         ds = _minimal_dataset()
         f = self._make_file_with_dataset(ds)
         r = repr(f)
-        self.assertIn("CT", r)
-        self.assertIn("Ada Lovelace", r)
+        self.assertIn("loaded=True", r)
+        self.assertNotIn("Ada Lovelace", r)
+        self.assertNotIn("dummy.dcm", r)
 
 
 class DicomFileLoadTests(unittest.TestCase):
@@ -526,21 +527,21 @@ class ValidateForSopClassTests(unittest.TestCase):
     # Type 2 warnings
     # ------------------------------------------------------------------
 
-    def test_absent_type2_tag_reported_as_warning(self):
+    def test_absent_type2_tag_reported_as_error(self):
         ds = self._ct_dataset()
         del ds[Tag.StudyDate]
         issues = validate_for_sop_class(ds)
-        self.assertTrue(any("[warning]" in i and "StudyDate" in i for i in issues))
+        self.assertTrue(any("[error]" in i and "StudyDate" in i for i in issues))
 
-    def test_detailed_type2_issue_includes_warning_fields(self):
+    def test_detailed_type2_issue_includes_requirement_fields(self):
         ds = self._ct_dataset()
         del ds[Tag.StudyDate]
         issues = validate_for_sop_class_detailed(ds)
         issue = [i for i in issues if i.tag == Tag.StudyDate][0]
-        self.assertEqual(issue.severity, "warning")
+        self.assertEqual(issue.severity, "error")
         self.assertEqual(issue.code, "missing-type2-attribute")
         self.assertEqual(issue.requirement, "Type 2")
-        self.assertFalse(issue.is_error)
+        self.assertTrue(issue.is_error)
 
     def test_empty_type2_tag_is_not_a_warning(self):
         # Type 2 tags may be empty — only absence triggers a warning
@@ -599,7 +600,7 @@ class ValidateForSopClassTests(unittest.TestCase):
     # Secondary Capture — no pixel requirements
     # ------------------------------------------------------------------
 
-    def test_secondary_capture_no_pixel_requirement(self):
+    def test_secondary_capture_requires_image_pixel_attributes(self):
         ds = DicomDataset({
             Tag.SOPClassUID: "1.2.840.10008.5.1.4.1.1.7",
             Tag.SOPInstanceUID: "1.2.3.4.5",
@@ -617,7 +618,7 @@ class ValidateForSopClassTests(unittest.TestCase):
         issues = validate_for_sop_class(ds)
         # No pixel tags set — must have no errors (only possible warnings for empty Type2)
         error_issues = [i for i in issues if "[error]" in i]
-        self.assertEqual(error_issues, [])
+        self.assertTrue(any("PixelData" in issue for issue in error_issues))
 
 
 if __name__ == "__main__":

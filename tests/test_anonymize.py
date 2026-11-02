@@ -160,7 +160,7 @@ class DeidentificationTests(unittest.TestCase):
         self.assertEqual(event.action, AnonymizationAction.REPLACE)
         self.assertTrue(event.before_present)
         self.assertTrue(event.after_present)
-        self.assertEqual(event.replacement, "Anonymous")
+        self.assertIsNone(event.replacement)
         self.assertIn("events", report.to_dict())
         self.assertIsInstance(report.events, tuple)
 
@@ -258,7 +258,7 @@ class DateShiftTests(unittest.TestCase):
 
     def test_plan_shift_date_appears_in_audit_report(self):
         dataset = DicomDataset({Tag.StudyDate: "20260101"})
-        report = self._make_plan(Tag.StudyDate, 7).apply_with_report(dataset)
+        report = self._make_plan(Tag.StudyDate, 7).apply_with_report(dataset, capture_values=True)
         event = next(e for e in report.events if e.tag == Tag.StudyDate)
         self.assertEqual(event.action, AnonymizationAction.SHIFT_DATE)
         self.assertEqual(event.previous_value, "20260101")

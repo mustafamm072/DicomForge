@@ -1,4 +1,4 @@
-"""Minimal DICOM data dictionary and Value Representation metadata.
+"""Versioned DICOM dictionary snapshot and Value Representation metadata.
 
 This module is the single source of truth for the small VR data dictionary the
 library uses when it needs to know a tag's Value Representation without an
@@ -14,6 +14,7 @@ private or vendor attributes are never silently corrupted.
 from __future__ import annotations
 
 from typing import Optional
+from functools import lru_cache
 
 from dicomforge.tags import Tag
 
@@ -73,6 +74,7 @@ SINGLE_VALUE_TEXT_VRS = frozenset({"LT", "ST", "UT", "UR"})
 
 #: Text VRs that carry numbers and are coerced to ``float`` / ``int`` on read.
 NUMERIC_STRING_VRS = frozenset({"DS", "IS"})
+ALL_VRS = TEXT_VRS | BYTES_VRS | frozenset(NUMERIC_VR_FORMATS) | {"SQ", "AT"}
 
 #: Character-set-sensitive text VRs.  Other text VRs are restricted to the
 #: DICOM default repertoire and are always handled as ASCII.
@@ -212,7 +214,22 @@ KNOWN_VR = {
 }
 
 
-def vr_for_tag(tag: Tag, *, bits_allocated: Optional[int] = None) -> str:
+@lru_cache(maxsize=1)
+def standard_dictionary() -> dict[str, list[str]]:
+    """Load the bundled versioned dictionary on first use (stdlib only)."""
+    import gzip
+    import json
+    from pathlib import Path
+
+    with gzip.open(Path(__file__).with_name("data") / "dictionary.json.gz", "rt") as stream:
+        result: dict[str, list[str]] = json.load(stream)
+    return result
+
+
+def vr_for_tag(
+    tag: Tag, *, bits_allocated: Optional[int] = None,
+    pixel_representation: Optional[int] = None,
+) -> str:
     """Return the Value Representation DicomForge uses for *tag*.
 
     ``PixelData`` resolves to ``"OB"`` for 8-bit data and ``"OW"`` otherwise
@@ -229,4 +246,12 @@ def vr_for_tag(tag: Tag, *, bits_allocated: Optional[int] = None) -> str:
             return "OW"
     if tag.element == 0x0000:
         return "UL"  # group length
-    return KNOWN_VR.get(tag, "UN")
+    entry = standard_dictionary().get(f"{tag.group:04X}{tag.element:04X}")
+    vr = entry[0] if entry else KNOWN_VR.get(tag, "UN")
+    if " or " in vr:
+        if vr == "US or SS":
+            return "SS" if pixel_representation == 1 else "US"
+        if vr == "OB or OW":
+            return "OB" if bits_allocated is not None and bits_allocated <= 8 else "OW"
+        return "UN"  # Context-dependent LUT VRs need an explicit declaration.
+    return vr

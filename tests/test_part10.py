@@ -69,7 +69,8 @@ class RoundTripTests(unittest.TestCase):
                 self.assertEqual(out.get(Tag.ImageType), ["ORIGINAL", "PRIMARY"])
                 self.assertEqual(out.get(Tag.InstanceNumber), 7)
                 self.assertEqual(out.get(Tag.WindowCenter), 40.0)
-                self.assertEqual(out.get(Tag.PixelData), bytes(range(16)))
+                self.assertEqual(out.get(Tag.PixelData), (bytes(v ^ 1 for v in range(16))
+                    if ts == TransferSyntaxUID.ExplicitVRBigEndian else bytes(range(16))))
                 self.assertEqual(str(out.get(Tag.PatientName)), "山田^太郎")
                 self.assertEqual(out.get(Tag.TransferSyntaxUID), ts)
 
@@ -186,6 +187,7 @@ class FileFormatTests(unittest.TestCase):
         # Since 0.11 the native writer frames already-compressed PixelData as an
         # undefined-length fragment sequence instead of rejecting the syntax.
         ds = _sample_dataset()
+        ds[Tag.TransferSyntaxUID] = TransferSyntaxUID.JPEGBaselineProcess1
         out = part10.loads(
             part10.dumps(ds, transfer_syntax=TransferSyntaxUID.JPEGBaselineProcess1)
         )
@@ -197,6 +199,7 @@ class FileFormatTests(unittest.TestCase):
     def test_encapsulated_write_rejects_non_fragment_value(self):
         ds = _sample_dataset()
         ds.set(Tag.PixelData, 12345)
+        ds[Tag.TransferSyntaxUID] = TransferSyntaxUID.JPEGBaselineProcess1
         with self.assertRaisesRegex(DicomValidationError, "EncapsulatedPixelData"):
             part10.dumps(ds, transfer_syntax=TransferSyntaxUID.JPEGBaselineProcess1)
 
@@ -375,7 +378,8 @@ class PydicomCrossCompatTests(unittest.TestCase):
                 self.assertEqual(pd.Rows, 4)
                 self.assertEqual(str(pd.PatientName), "山田^太郎")
                 self.assertEqual(pd.file_meta.TransferSyntaxUID, ts)
-                self.assertEqual(bytes(pd.PixelData), bytes(range(16)))
+                self.assertEqual(bytes(pd.PixelData), (bytes(v ^ 1 for v in range(16))
+                    if ts == TransferSyntaxUID.ExplicitVRBigEndian else bytes(range(16))))
                 # The nested sequence must survive the round-trip into pydicom.
                 self.assertEqual(
                     pd.ReferencedStudySequence[0].ReferencedSOPInstanceUID, "1.2.3.4"

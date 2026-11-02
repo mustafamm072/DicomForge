@@ -3,6 +3,8 @@
 import json
 import sys
 import unittest
+import types
+from typing import Any
 from unittest.mock import patch
 
 from dicomforge.adapt import from_json, to_json
@@ -263,7 +265,7 @@ class NumpyAdapterTests(unittest.TestCase):
         frames = [_FakeArray("frame-0"), _FakeArray("frame-1")]
         raw = _FakePydicomDataset(_FakeArrayStack(frames))
 
-        with patch.dict(sys.modules, {"numpy": _FakeNumpy()}):
+        with patch.dict(sys.modules, {"numpy": _FakeNumpy(), "pydicom": types.SimpleNamespace()}):
             with patch("dicomforge.adapt.to_pydicom", return_value=raw) as convert:
                 result = pixel_array(
                     _compressed_multiframe_dataset(),
@@ -281,7 +283,7 @@ class NumpyAdapterTests(unittest.TestCase):
 
         raw = _FailingPydicomDataset()
 
-        with patch.dict(sys.modules, {"numpy": _FakeNumpy()}):
+        with patch.dict(sys.modules, {"numpy": _FakeNumpy(), "pydicom": types.SimpleNamespace()}):
             with patch("dicomforge.adapt.to_pydicom", return_value=raw):
                 with self.assertRaisesRegex(UnsupportedTransferSyntaxError, "pydicom"):
                     pixel_array(
@@ -295,7 +297,7 @@ class NumpyAdapterTests(unittest.TestCase):
         frames = [_FakeArray("frame-0"), _FakeArray("frame-1")]
         raw = _FakePydicomDataset(_FakeArrayStack(frames))
 
-        with patch.dict(sys.modules, {"numpy": _FakeNumpy()}):
+        with patch.dict(sys.modules, {"numpy": _FakeNumpy(), "pydicom": types.SimpleNamespace()}):
             with patch("dicomforge.adapt.to_pydicom", return_value=raw) as convert:
                 result = list(
                     iter_pixel_frames(
@@ -310,7 +312,7 @@ class NumpyAdapterTests(unittest.TestCase):
     def test_pixel_array_rejects_out_of_range_frame_before_decode(self):
         from dicomforge.adapt import pixel_array
 
-        with patch.dict(sys.modules, {"numpy": _FakeNumpy()}):
+        with patch.dict(sys.modules, {"numpy": _FakeNumpy(), "pydicom": types.SimpleNamespace()}):
             with patch("dicomforge.adapt.to_pydicom") as convert:
                 with self.assertRaises(IndexError):
                     pixel_array(
@@ -437,8 +439,9 @@ class PilAdapterTests(unittest.TestCase):
 
         from dicomforge.adapt import to_pil_image
 
-        pixels = np.array([[[235, 128, 128]]], dtype=np.uint8)
+        pixels = np.array([[[235, 128, 128], [235, 128, 128]]], dtype=np.uint8)
         ds = self._make_colour_dataset("YBR_FULL_422", pixels)
+        ds[Tag.PixelData] = bytes([235, 235, 128, 128])
         img = to_pil_image(ds, apply_window=False)
 
         r, g, b = img.getpixel((0, 0))

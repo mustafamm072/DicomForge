@@ -1,5 +1,7 @@
 """Lightweight DICOM processing primitives."""
 
+__version__ = "0.12.0"
+
 from dicomforge.anonymize import (
     AnonymizationAction,
     AnonymizationEvent,
@@ -117,8 +119,17 @@ from dicomforge.uids import (
     generate_uid,
     is_valid_uid,
 )
+from dicomforge.dataset import BulkDataReference, DataElement, DatasetView
+from dicomforge.api import validate_elements_detailed
+from dicomforge.collection import (
+    CollectionIssue, CollectionReport, ReleasePolicy, inspect_collection,
+    release_collection, validate_collection,
+)
 
 __all__ = [
+    "__version__", "BulkDataReference", "DataElement", "DatasetView",
+    "CollectionIssue", "CollectionReport", "ReleasePolicy", "inspect_collection",
+    "release_collection", "validate_collection", "validate_elements_detailed",
     # Anonymization
     "AnonymizationAction",
     "AnonymizationEvent",
