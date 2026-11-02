@@ -1,0 +1,112 @@
+{
+  "date": "2026-11-01",
+  "base_commit": "eebe31d",
+  "scope": "three follow-up review findings",
+  "version": "0.12.0",
+  "wheel_sha256": "db531e58aa4a3b891607aa412cde75ee50eb9366dc42d6272e46c2b8654ddab9",
+  "matrix": [
+    {
+      "python": "Python 3.9.25",
+      "mode": "core",
+      "tests": 401,
+      "skipped": 30,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.10.20",
+      "mode": "core",
+      "tests": 401,
+      "skipped": 30,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.11.14",
+      "mode": "core",
+      "tests": 401,
+      "skipped": 30,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.12.13",
+      "mode": "core",
+      "tests": 401,
+      "skipped": 30,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.13.12",
+      "mode": "core",
+      "tests": 401,
+      "skipped": 30,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.14.3",
+      "mode": "core",
+      "tests": 401,
+      "skipped": 30,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.9.25",
+      "mode": "extras",
+      "tests": 401,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.10.20",
+      "mode": "extras",
+      "tests": 401,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.11.14",
+      "mode": "extras",
+      "tests": 401,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.12.13",
+      "mode": "extras",
+      "tests": 401,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.13.12",
+      "mode": "extras",
+      "tests": 401,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.14.3",
+      "mode": "extras",
+      "tests": 401,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.10.20",
+      "mode": "pydicom-2.4.4",
+      "tests": 401,
+      "skipped": 0,
+      "result": "passed"
+    }
+  ],
+  "quality": {
+    "ruff": "passed",
+    "mypy": "passed",
+    "compileall": "passed",
+    "git_diff_check": "passed"
+  },
+  "cli": "Module/console entry points and inventory/validate/plan/release/resume subprocess tests passed",
+  "regressions": 10,
+  "notes": [
+    "Core-only skips are intentional optional integration skips",
+    "No live external PACS or GitHub-hosted CI run was performed"
+  ]
+}

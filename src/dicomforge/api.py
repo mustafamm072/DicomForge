@@ -105,6 +105,7 @@ class DicomFile:
         self._path = Path(path)
         self._stop_before_pixels = stop_before_pixels
         self._dataset: Optional[DicomDataset] = None
+        self._metadata_tags: set[Tag] = set()
 
     @property
     def path(self) -> Path:
@@ -116,6 +117,8 @@ class DicomFile:
             from dicomforge.io import read
 
             self._dataset = read(self._path, stop_before_pixels=self._stop_before_pixels)
+            if self._dataset.is_partial:
+                self._metadata_tags = set(self._dataset)
         return self._dataset
 
     # ------------------------------------------------------------------
@@ -314,13 +317,16 @@ class DicomFile:
         write(path, self.dataset)
 
     def load_pixels(self) -> DicomDataset:
-        """Reload a metadata-only file while retaining edited metadata values."""
+        """Load pixels while retaining metadata edits, additions, and deletions."""
         current = self.dataset
         if current.is_partial:
             from dicomforge.io import read
             full = read(self._path)
+            for tag in self._metadata_tags.difference(current):
+                full.pop(tag, None)
             for element in current.elements():
                 full.set(element.tag, element.value, vr=element.vr)
+            full._lexical.update(current._lexical)
             self._dataset = full
         return self.dataset
 

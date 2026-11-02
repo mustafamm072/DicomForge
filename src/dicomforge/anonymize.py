@@ -392,7 +392,8 @@ def _shift_date_value(value: Any, offset_days: int) -> Any:
     * **DT** (DateTime) — starts with ``YYYYMMDD``; any trailing time
       component (``HHmmSS.FFFFFF±HHMM``) is preserved verbatim.
 
-    If *value* is not a string, is empty, shorter than 8 characters, or
+    Lists and tuples are shifted element by element, preserving their shape.
+    If a scalar *value* is not a string, is empty, shorter than 8 characters, or
     does not begin with a valid calendar date, it is returned unchanged
     rather than raising — partial or missing dates should not crash a
     de-identification run.
@@ -404,6 +405,10 @@ def _shift_date_value(value: Any, offset_days: int) -> Any:
     offset_days:
         Number of days to add (positive = future, negative = past).
     """
+    if isinstance(value, list):
+        return [_shift_date_value(item, offset_days) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_shift_date_value(item, offset_days) for item in value)
     if not isinstance(value, str) or len(value) < 8:
         return value
     date_part = value[:8]

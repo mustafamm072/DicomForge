@@ -1,5 +1,23 @@
 # 0.12 verification — November 1, 2026
 
+## Follow-up review fixes
+
+The three follow-up findings are fixed: metadata deletions survive pixel loading,
+implicit signed VRs resolve using completed local/ancestor pixel context, and
+every value in multi-valued longitudinal dates shifts consistently. Ten new
+regression tests cover saved outputs, nested context/overrides, unsigned LUT
+counts, and independent pydicom reads.
+
+The fixed wheel passed **401 tests without skips** in extras-enabled environments
+on Python 3.9.25, 3.10.20, 3.11.14, 3.12.13, 3.13.12, and 3.14.3, plus the separate
+pydicom 2.4.4 environment. Core-only runs passed on all six versions with 30
+intentional optional-integration skips each. CLI subprocesses, installed entry
+points, package checks, Ruff, mypy, compilation, and the synthetic research
+workflow passed. [Follow-up evidence](review-fixes-verification.json) records the
+thirteen runs and fixed artifact's digest.
+
+## Original implementation verification
+
 The implementation was tested locally on macOS arm64 before committing. The
 same wheel was installed in fresh isolated environments; source PYTHONPATH was
 removed for installed-wheel tests. Local loopback networking was enabled so the

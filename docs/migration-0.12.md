@@ -20,7 +20,7 @@ upgrading an existing workflow. The following behavior changes are deliberate.
   overwrite and rejects input/output equality; batch collisions are errors.
   Batch legacy names are retained for compatibility; releases use remapped UIDs.
 - **Partial reads:** saving stop_before_pixels output raises. Re-read fully or
-  use DicomFile.load_pixels(), which retains edited metadata values.
+  use DicomFile.load_pixels(), which retains edited values, additions, and deletions.
 - **Pixels:** Big Endian output has different raw bytes but identical values.
   Signed sub-word values are normalized. Thumbnails apply modality rescale
   before VOI. Width=1 is a threshold; widths below one raise. RLE 32-bit image

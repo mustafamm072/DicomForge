@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Preserve metadata deletions, additions, edits, and unchanged numeric lexical
+  forms when `DicomFile.load_pixels()` completes a metadata-only read.
+- Resolve signed implicit-VR attributes after the full local/ancestor pixel
+  context is available, including elements preceding PixelRepresentation and
+  nested sequence items. Preserve unsigned LUT descriptor count fields.
+- Shift every DA/DT value in lists and tuples during longitudinal releases,
+  preserving collection shape and datetime suffixes; invalid dates still require
+  policy review. Add end-to-end regressions for all three follow-up findings.
+
 ## 0.12.0 — 2026-11-01
 
 - Preserve explicit VRs, nested sequences, numeric-string lexical forms, file

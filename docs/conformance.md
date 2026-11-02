@@ -16,7 +16,9 @@ The [migration guide](migration-0.12.md) lists behavior changes from 0.11.
 - Native Part 10 supports Implicit/Explicit VR Little Endian, Explicit VR Big
   Endian, Deflated Explicit VR Little Endian, nested sequences, charset-aware
   text, and encapsulated fragment framing. Unchanged native DS/IS lexical forms
-  are retained. Byte-for-byte original-file reproduction is not guaranteed.
+  are retained. Signed implicit VRs use completed local/ancestor pixel context,
+  including attributes occurring before PixelRepresentation. LUT descriptors
+  retain unsigned count/depth fields. Byte-for-byte reproduction is not guaranteed.
 - Native metadata scans use mmap and stop at PixelData. No fully remote/deferred
   bulk reader is claimed. Deflated input expands under a configurable 512 MiB
   default limit via `part10.loads(max_decompressed_bytes=...)`.
@@ -31,6 +33,8 @@ The [migration guide](migration-0.12.md) lists behavior changes from 0.11.
   VRs from a read dataset cannot be safely endian-converted and are rejected.
   Compression changes require the transcoder. Conflicting file-meta/dataset
   identities are rejected. Partial reads cannot be saved accidentally.
+  `DicomFile.load_pixels()` retains metadata additions, edits, and deletions,
+  including removed private attributes and nested sequence changes.
 - File writes use same-directory staging, fsync, and atomic replacement/link.
   `overwrite=False` is an atomic no-clobber contract. Atomicity is per file and
   assumes a filesystem supporting ordinary local rename/hard-link semantics.
@@ -85,7 +89,8 @@ this metadata scope. Acquisition completeness and pixel identity remain unchecke
   read the file or print names/paths.
 - ReleasePolicy requires a project namespace and at least 32 key bytes.
   Subject identity uses PatientID plus issuer; longitudinal shifts are stable
-  per subject and reject partial/malformed dates. Conventional CT/MR releases
+  per subject, shift each value of multi-valued DA/DT attributes, and reject
+  partial/malformed dates. Conventional CT/MR releases
   require external pixel review. Unknown structured/overlay/document scopes
   are sent for review rather than assumed safe.
 - Outputs use remapped instance UIDs; policy/tool/key identity and keyed source

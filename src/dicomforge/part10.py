@@ -52,6 +52,7 @@ from dicomforge.dictionary import (
     UNDEFINED_LENGTH,
     padding_byte,
     vr_for_tag,
+    standard_dictionary,
 )
 from dicomforge.encapsulation import EncapsulatedPixelData, as_encapsulated
 from dicomforge.errors import CharacterSetError, DicomValidationError
@@ -69,6 +70,7 @@ _GROUP_LENGTH_TAG = Tag(0x0002, 0x0000)
 _FILE_META_VERSION_TAG = Tag(0x0002, 0x0001)
 _IMPLEMENTATION_VERSION_TAG = Tag(0x0002, 0x0013)
 _FILE_META_GROUP = 0x0002
+_LUT_DESCRIPTOR_TAGS = frozenset({Tag(0x0028, element) for element in (0x1101, 0x1102, 0x1103, 0x3002)})
 
 #: Every VR code DicomForge recognises (used to sniff Explicit vs Implicit VR
 #: when reading a bare, preamble-less data set with ``force=True``).
@@ -211,6 +213,8 @@ def loads(
     main, _ = _read_elements(
         body, pos, len(body), syntax, charset, stop_before_pixels=stop_before_pixels
     )
+    if not syntax.explicit:
+        _resolve_implicit_signed_vrs(main, syntax)
     for tag, value in main.items():
         dataset.set(tag, value, vr=main.vr(tag))
     dataset._lexical.update(main._lexical)
@@ -463,7 +467,7 @@ def _read_elements(
             _require_bytes(data, pos, length, end)
             raw = bytes(data[pos : pos + length])
             pos += length
-            value = _decode_value(vr or "UN", raw, syntax, active_charset)
+            value = _decode_value(vr or "UN", raw, syntax, active_charset, tag=tag)
 
         dataset.set(tag, value, vr=vr)
         if vr in NUMERIC_STRING_VRS:
@@ -473,6 +477,34 @@ def _read_elements(
     if delimiter is not None:
         raise DicomValidationError("Missing DICOM item delimiter")
     return dataset, pos
+
+
+def _resolve_implicit_signed_vrs(
+    dataset: DicomDataset, syntax: _Syntax, pixel_representation: Optional[int] = None,
+) -> None:
+    """Resolve signed implicit VRs after local/ancestor pixel context is known.
+
+    Ambiguous elements may precede PixelRepresentation or occur in a sequence
+    before the parent's pixel module. Their provisional US decoding retains all
+    bits, so it can be reinterpreted without losing values after parsing ends.
+    Explicit VR input is never reinterpreted by this pass.
+    """
+    pixel_representation = dataset.get(Tag.PixelRepresentation, pixel_representation)
+    dictionary = standard_dictionary()
+    for tag, value in list(dataset.items()):
+        entry = dictionary.get(f"{tag.group:04X}{tag.element:04X}")
+        if entry and entry[0] == "US or SS" and pixel_representation is not None:
+            resolved = vr_for_tag(tag, pixel_representation=pixel_representation)
+            previous = dataset.vr(tag)
+            if previous != resolved:
+                if value is not None:
+                    raw = _encode_numbers(previous, value, syntax.endian, tag=tag)
+                    value = _decode_numbers(resolved, raw, syntax.endian, tag=tag)
+                dataset.set(tag, value, vr=resolved)
+        children = value if isinstance(value, (list, tuple)) else [value]
+        for child in children:
+            if isinstance(child, DicomDataset):
+                _resolve_implicit_signed_vrs(child, syntax, pixel_representation)
 
 
 def _read_sequence(
@@ -550,13 +582,15 @@ def _parse_basic_offset_table(raw: bytes, syntax: _Syntax) -> Tuple[int, ...]:
     return struct.unpack_from(syntax.endian + "I" * count, raw)
 
 
-def _decode_value(vr: str, raw: bytes, syntax: _Syntax, charset: Any) -> Any:
+def _decode_value(
+    vr: str, raw: bytes, syntax: _Syntax, charset: Any, *, tag: Optional[Tag] = None,
+) -> Any:
     if vr in BYTES_VRS:
         return bytes(raw)
     if vr == "AT":
         return _decode_at(raw, syntax.endian)
     if vr in NUMERIC_VR_FORMATS:
-        return _decode_numbers(vr, raw, syntax.endian)
+        return _decode_numbers(vr, raw, syntax.endian, tag=tag)
     if vr in TEXT_VRS:
         return _decode_text(vr, raw, charset)
     return bytes(raw)
@@ -575,7 +609,10 @@ def _decode_at(raw: bytes, endian: str) -> Any:
     return tags[0] if len(tags) == 1 else tags
 
 
-def _decode_numbers(vr: str, raw: bytes, endian: str) -> Any:
+def _decode_numbers(vr: str, raw: bytes, endian: str, *, tag: Optional[Tag] = None) -> Any:
+    if vr == "SS" and tag in _LUT_DESCRIPTOR_TAGS and len(raw) == 6:
+        # PS3.3 LUT descriptors: only the first mapped value is signed.
+        return list(struct.unpack(endian + "HhH", raw))
     fmt = NUMERIC_VR_FORMATS[vr]
     size = struct.calcsize(endian + fmt)
     if len(raw) % size:
@@ -675,7 +712,7 @@ def _encode_value(tag: Tag, vr: str, value: Any, syntax: _Syntax, charset: Any) 
     if vr == "AT":
         return _encode_at(value, syntax.endian)
     if vr in NUMERIC_VR_FORMATS:
-        return _encode_numbers(vr, value, syntax.endian)
+        return _encode_numbers(vr, value, syntax.endian, tag=tag)
     if vr in TEXT_VRS:
         return _encode_text(vr, value, charset)
     if isinstance(value, (bytes, bytearray)):
@@ -767,9 +804,11 @@ def _encode_at(value: Any, endian: str) -> bytes:
     return bytes(out)
 
 
-def _encode_numbers(vr: str, value: Any, endian: str) -> bytes:
+def _encode_numbers(vr: str, value: Any, endian: str, *, tag: Optional[Tag] = None) -> bytes:
     fmt = NUMERIC_VR_FORMATS[vr]
     values = value if isinstance(value, (list, tuple)) else [value]
+    if vr == "SS" and tag in _LUT_DESCRIPTOR_TAGS and len(values) == 3:
+        return struct.pack(endian + "HhH", *(int(item) for item in values))
     converter = float if vr in ("FL", "FD") else int
     packed = bytearray()
     for item in values:
