@@ -41,3 +41,22 @@ as a substitute for validated modality, presentation state, and viewer behavior.
 the declared charset. Legacy DICOM character sets, especially ISO 2022
 code-extension data from real modalities, should still be validated with
 site-specific fixtures before regulated clinical use.
+
+## Research release policies and manifests (0.12)
+
+A collection acceptance decision names the metadata scope it assessed. Pixel
+identity, recognizable anatomy and acquisition completeness remain explicit
+unchecked scopes. A NO burned-in annotation flag is not independent proof that
+pixels are anonymous. ReleasePolicy requires an explicit external review choice.
+
+Use a managed project key and namespace for confidential pseudonyms. The
+low-level starter profile's public default salt is for convenience, not secret
+linkage. Do not mix the 0.11 and 0.12 mapping strategies in one collection.
+Routine reports and repr omit values; sensitive diagnostic capture and export
+are explicit. Preserve access controls on manifests too: hashes and pseudonyms
+can still link records. Keep raw mapping registries separate.
+
+Release outputs are atomically published per instance. They are not one atomic
+transaction across a whole cohort. Resume verifies completed output integrity
+and unchanged source content/key/policy. Keep immutable source inputs during a
+job and retain the resulting tool/policy versions with your research record.

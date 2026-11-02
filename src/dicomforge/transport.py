@@ -39,8 +39,8 @@ from __future__ import annotations
 
 import random
 import time
-from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Iterator, Optional, Tuple, Union
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterable, Iterator, Optional, Tuple, Union, cast
 
 from dicomforge.dicomweb import DicomwebResponse, Headers, MutableHeaders
 from dicomforge.errors import MissingBackendError
@@ -77,6 +77,7 @@ class StreamingDicomwebResponse:
     status_code: int
     headers: Headers
     body_iter: Iterator[bytes]
+    close_callback: Optional[Callable[[], None]] = field(default=None, repr=False)
 
     def header(self, name: str, default: str = "") -> str:
         for key, value in self.headers.items():
@@ -86,8 +87,24 @@ class StreamingDicomwebResponse:
 
     def drain(self) -> None:
         """Consume and discard the body iterator, releasing the connection."""
-        for _ in self.body_iter:
-            pass
+        try:
+            for _ in self.body_iter:
+                pass
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        close = getattr(self.body_iter, "close", None)
+        if callable(close):
+            close()
+        if self.close_callback is not None:
+            self.close_callback()
+
+    def __enter__(self) -> "StreamingDicomwebResponse":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +250,7 @@ class RequestsDicomwebTransport:
             status_code=resp.status_code,
             headers=dict(resp.headers),
             body_iter=resp.iter_content(chunk_size=chunk_size),
+            close_callback=resp.close,
         )
 
     def close(self) -> None:
@@ -303,6 +321,8 @@ class RetryTransport:
         backoff_max: float = 60.0,
         jitter: float = 0.1,
         retryable_status_codes: Iterable[int] = _DEFAULT_RETRYABLE_STATUSES,
+        allowed_methods: Iterable[str] = ("GET", "HEAD", "OPTIONS"),
+        max_elapsed: float = 120.0,
     ) -> None:
         if max_retries < 0:
             raise ValueError(f"max_retries must be >= 0, got {max_retries}.")
@@ -316,6 +336,10 @@ class RetryTransport:
         self.backoff_max = backoff_max
         self.jitter = jitter
         self._retryable = frozenset(retryable_status_codes)
+        self._allowed_methods = frozenset(method.upper() for method in allowed_methods)
+        if max_elapsed <= 0 or backoff_max < 0:
+            raise ValueError("Retry time budget must be positive and backoff_max nonnegative")
+        self.max_elapsed = max_elapsed
 
     def request(
         self,
@@ -326,11 +350,36 @@ class RetryTransport:
     ) -> DicomwebResponse:
         """Send a request, retrying on transient errors."""
         response: DicomwebResponse
+        replayable = body is None or isinstance(body, (bytes, bytearray, str))
+        if method.upper() not in self._allowed_methods or not replayable:
+            return cast(DicomwebResponse, self._transport.request(method, url, headers, body))
+        started = time.monotonic()
         for attempt in range(self.max_retries + 1):
-            response = self._transport.request(method, url, headers, body)
+            try:
+                response = self._transport.request(method, url, headers, body)
+            except (OSError, TimeoutError):
+                if attempt == self.max_retries or time.monotonic() - started >= self.max_elapsed:
+                    raise
+                time.sleep(min(self.backoff_base * 2 ** attempt, self.backoff_max,
+                               max(0, self.max_elapsed - (time.monotonic() - started))))
+                continue
             if response.status_code not in self._retryable or attempt == self.max_retries:
                 return response
             delay = min(self.backoff_base * (2.0 ** attempt), self.backoff_max)
+            retry_after = response.header("Retry-After")
+            if retry_after:
+                try:
+                    delay = max(delay, float(retry_after))
+                except ValueError:
+                    from email.utils import parsedate_to_datetime
+                    from datetime import datetime, timezone
+                    try:
+                        delay = max(delay, (parsedate_to_datetime(retry_after)
+                                    - datetime.now(timezone.utc)).total_seconds())
+                    except (TypeError, ValueError, OverflowError):
+                        pass
+            if delay > self.max_elapsed - (time.monotonic() - started):
+                return response
             noise = delay * self.jitter * random.random()
             time.sleep(delay + noise)
         return response  # satisfies type checker; loop always returns above
@@ -349,7 +398,8 @@ class RetryTransport:
                 f"{type(self._transport).__name__!r} does not support streaming. "
                 "Use RequestsDicomwebTransport or another streaming-capable transport."
             )
-        return self._transport.stream(method, url, headers, body, **kwargs)
+        return cast(StreamingDicomwebResponse,
+                    self._transport.stream(method, url, headers, body, **kwargs))
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +455,7 @@ class BearerTokenTransport:
         """Send a request with the Bearer token injected."""
         merged: MutableHeaders = dict(headers)
         merged["Authorization"] = f"Bearer {self.token}"
-        return self._transport.request(method, url, merged, body)
+        return cast(DicomwebResponse, self._transport.request(method, url, merged, body))
 
     def stream(
         self,
@@ -422,7 +472,8 @@ class BearerTokenTransport:
             )
         merged: MutableHeaders = dict(headers)
         merged["Authorization"] = f"Bearer {self.token}"
-        return self._transport.stream(method, url, merged, body, **kwargs)
+        return cast(StreamingDicomwebResponse,
+                    self._transport.stream(method, url, merged, body, **kwargs))
 
 
 # ---------------------------------------------------------------------------

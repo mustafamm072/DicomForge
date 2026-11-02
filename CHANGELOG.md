@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+- Preserve metadata deletions, additions, edits, and unchanged numeric lexical
+  forms when `DicomFile.load_pixels()` completes a metadata-only read.
+- Resolve signed implicit-VR attributes after the full local/ancestor pixel
+  context is available, including elements preceding PixelRepresentation and
+  nested sequence items. Preserve unsigned LUT descriptor count fields.
+- Shift every DA/DT value in lists and tuples during longitudinal releases,
+  preserving collection shape and datetime suffixes; invalid dates still require
+  policy review. Add end-to-end regressions for all three follow-up findings.
+
+## 0.12.0 — 2026-11-01
+
+- Preserve explicit VRs, nested sequences, numeric-string lexical forms, file
+  metadata and compressed fragments across native/pydicom adapters. Bundle a
+  versioned standard dictionary, with source license; auto is consistently native.
+- Correct endian conversion, signed stored bits, modality-before-VOI previews,
+  bit-packed/native YBR frame handling, and RLE image-attribute restrictions.
+- Reject truncated containers/multipart, invalid numeric widths, missing
+  delimiters, excessive nesting/inflation, accidental partial saves, conflicting
+  SOP identities, insufficient UID roots and Unicode UID digits.
+- Make default audit/repr output value-free; use versioned HMAC UID mapping.
+  Add atomic/no-clobber file writes, collision-safe legacy batches, and source
+  protection. See migration-0.12.md for intentional compatibility changes.
+- Add conventional CT/MR collection geometry/reference/resource checks,
+  read-only pydicom validation, explicit keyed research release policies,
+  reproducible manifests, output verification and interrupted-job resume.
+- Add inventory/validate/plan/release JSON CLI, stable exit codes, installed-wheel
+  CLI tests, py.typed and a Python 3.9–3.14 core/extras CI matrix.
+- Preserve JSON VR/PN/null/bulk semantics; add strict streaming chunk/file sinks,
+  explicit response closure, safe/replayable retry budgets and typed STOW outcomes.
+- Keep full IOD/PS3.15, pixel identity detection, vendor certification and production
+  DIMSE outside the declared core scope; use established optional integrations.
+
+
 All notable changes to DicomForge are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 

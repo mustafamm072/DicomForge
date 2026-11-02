@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable, Optional
+from dicomforge.dataset import DicomDataset
 
 from dicomforge.errors import UnsupportedTransferSyntaxError
 from dicomforge.transfer_syntax import TransferSyntax
@@ -32,6 +33,8 @@ class Codec:
     transfer_syntax_uids: frozenset[str]
     can_decode: bool = True
     can_encode: bool = False
+    decode_frame: Optional[Callable[[DicomDataset, int], Any]] = None
+    probe: Optional[Callable[[DicomDataset], bool]] = None
 
     def supports(self, transfer_syntax_uid: str, *, encode: bool = False) -> bool:
         if transfer_syntax_uid not in self.transfer_syntax_uids:
@@ -51,9 +54,14 @@ class CodecRegistry:
     def register(self, codec: Codec) -> None:
         self._codecs[codec.name] = codec
 
-    def find(self, syntax: TransferSyntax, *, encode: bool = False) -> Codec:
+    def find(
+        self, syntax: TransferSyntax, *, encode: bool = False,
+        dataset: Optional[DicomDataset] = None,
+    ) -> Codec:
         for codec in self._codecs.values():
-            if codec.supports(syntax.uid, encode=encode):
+            if codec.supports(syntax.uid, encode=encode) and (
+                dataset is None or codec.probe is None or codec.probe(dataset)
+            ):
                 return codec
         action = "encode" if encode else "decode"
         raise UnsupportedTransferSyntaxError(

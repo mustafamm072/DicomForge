@@ -1,0 +1,19 @@
+{"probe": "nested-phi-default-backend", "result": {"nested_type": "Dataset", "nested_name": "SYNTHETIC^NESTED", "nested_private_survived": true, "identity_removed_marker": "YES"}}
+{"probe": "audit-original-values", "result": {"tag": "(0010,0010)", "action": "replace", "before_present": true, "after_present": true, "replacement": "Anonymous", "path": [], "previous_value": "SYNTHETIC^PATIENT", "new_value": "Anonymous"}}
+{"probe": "explicit-vr-loss", "result": {"before_vr": "SH", "emitted_vr": "UN", "reader_value_type": "str"}}
+{"probe": "native-endian-change", "result": {"source_values": [258, 1024], "after_write_values": [[513, 4]]}}
+{"probe": "truncated-pixel-value", "result": {"original_pixel_bytes": 4, "accepted_pixel_bytes": 2}}
+{"probe": "signed-12-bit-values", "result": {"forge": [[4095, 2048]], "pydicom": [[-1, -2048]]}}
+{"probe": "preview-missing-modality-rescale", "result": {"preview_pixels": [[127, 255]], "modality_values": [[-1024.0, 0.0]]}}
+{"probe": "native-rle-default-write", "exception": "ValueError", "message": "With tag (7FE0,0010) got exception: The (7FE0,0010) 'Pixel Data' element value hasn't been encapsulated as required for a compressed transfer syntax - see pydicom.encaps.encapsulate() for more information"}
+{"probe": "default-read-native-rle-decompress", "exception": "DicomValidationError", "message": "RLE header declares 3758161918 segment(s) but SamplesPerPixel=1 with BitsAllocated=16 requires 2."}
+{"probe": "nested-to-pydicom", "exception": "TypeError", "message": "Sequence contents must be 'Dataset' instances."}
+{"probe": "dicom-json-roundtrip", "result": {"7FE00010": {"vr": "OB", "Value": ["https://example.invalid/bulk"]}, "00100010": {"vr": "PN", "Value": [{"Alphabetic": "Synthetic"}]}}}
+{"probe": "truncated-multipart", "result": {"accepted_parts": 1, "payload": "TRUNCATED"}}
+{"probe": "empty-type1-pixeldata", "result": {"pixel_data_issues": []}}
+{"probe": "batch-basename-collision", "result": {"reported_successes": 2, "output_files": 1}}
+{"probe": "unregistered-standard-sequence-write", "exception": "DicomValidationError", "message": "VR 'UN' for (0040,A730) expects bytes, got list."}
+{"probe": "long-uid-root-collisions", "result": {"inputs": 1000, "unique_outputs": 420}}
+{"probe": "unicode-uid-grammar", "result": {"accepted": true}}
+{"probe": "rle-32bit-standard-image", "result": {"bits_allocated": 32, "transfer_syntax": "1.2.840.10008.1.2.5"}}
+{"probe": "retry-consumed-upload", "result": ["SYNTHETIC_UPLOAD", ""]}

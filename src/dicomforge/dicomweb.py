@@ -13,8 +13,7 @@ import json
 import re
 import uuid
 from dataclasses import dataclass
-from email.parser import BytesParser
-from email.policy import default
+from pathlib import Path
 from typing import (
     Any,
     Dict,
@@ -31,7 +30,7 @@ from typing import (
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
-from dicomforge.dataset import DicomDataset
+from dicomforge.dataset import BulkDataReference, DicomDataset
 from dicomforge.errors import DicomForgeError, DicomValidationError
 from dicomforge.tags import Tag, TagInput
 
@@ -91,6 +90,41 @@ class DicomwebResponse:
             if key.lower() == name.lower():
                 return value
         return default_value
+
+    def store_result(self) -> "StoreResult":
+        """Decode STOW business outcomes; HTTP 2xx alone is not full success."""
+        if not self.body:
+            return StoreResult((), (), assessed=False)
+        payload = json.loads(self.body)
+        def instances(key: str) -> Tuple[StoreInstanceResult, ...]:
+            entries = payload.get(key, {}).get("Value", [])
+            result = []
+            for item in entries:
+                def value(tag: str) -> Any:
+                    return item.get(tag, {}).get("Value", [None])[0]
+                result.append(StoreInstanceResult(str(value("00081155") or ""),
+                                                   value("00081196"), value("00081197")))
+            return tuple(result)
+        return StoreResult(instances("00081199"), instances("00081198"),
+                           assessed="00081199" in payload or "00081198" in payload)
+
+
+@dataclass(frozen=True)
+class StoreInstanceResult:
+    sop_instance_uid: str
+    warning_reason: Optional[int] = None
+    failure_reason: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class StoreResult:
+    stored: Tuple[StoreInstanceResult, ...]
+    failed: Tuple[StoreInstanceResult, ...]
+    assessed: bool
+
+    @property
+    def is_success(self) -> bool:
+        return self.assessed and bool(self.stored) and not self.failed
 
 
 class DicomwebTransport(Protocol):
@@ -251,6 +285,60 @@ class DicomwebClient:
 
     def retrieve_study(self, study_uid: str, *, accept: str = _DEFAULT_WADO_ACCEPT) -> bytes:
         return self._wado(f"studies/{_path_uid(study_uid)}", accept=accept).body
+
+    def retrieve_study_to(
+        self, study_uid: str, directory: Union[str, Path], *,
+        max_instance_bytes: int = 2 * 1024 ** 3,
+    ) -> Iterator[Path]:
+        """Stream instances to atomic, non-overwriting files with bounded memory.
+
+        Files use neutral numbered names; no Content-Location is trusted as a
+        local path. Incomplete instances remain unpublished and are removed.
+        Already completed instances remain available if a later transfer fails.
+        """
+        import os
+        import tempfile
+        from dicomforge.multipart import iter_multipart_chunks
+
+        destination = Path(directory)
+        destination.mkdir(parents=True, exist_ok=True)
+        if not hasattr(self.transport, "stream"):
+            raise DicomwebError("A streaming transport is required for retrieval to disk")
+        response = self.transport.stream("GET", f"{self.base_url}/studies/{_path_uid(study_uid)}",
+                                         {**self.headers, "Accept": _DEFAULT_WADO_ACCEPT})
+        staging: Optional[Path] = None
+        stream = None
+        try:
+            if not 200 <= response.status_code < 300:
+                raise DicomwebError(f"DICOMweb HTTP status {response.status_code}")
+            index = 0
+            for chunk in iter_multipart_chunks(response.header("content-type"), response.body_iter,
+                                                max_part_bytes=max_instance_bytes):
+                if stream is None:
+                    descriptor, name = tempfile.mkstemp(prefix=".dicomforge-", dir=destination)
+                    staging = Path(name)
+                    stream = os.fdopen(descriptor, "wb")
+                stream.write(chunk.data)
+                if chunk.final:
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                    stream.close()
+                    stream = None
+                    index += 1
+                    output = destination / f"instance-{index:06d}.dcm"
+                    assert staging is not None
+                    os.link(staging, output)
+                    staging.unlink()
+                    staging = None
+                    yield output
+        finally:
+            if stream is not None:
+                stream.close()
+            if staging is not None:
+                staging.unlink(missing_ok=True)
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
 
     def retrieve_study_parts(
         self,
@@ -480,7 +568,12 @@ class DicomwebClient:
                     f"{streaming_resp.status_code}."
                 )
             ct = streaming_resp.header("content-type")
-            yield from parse_multipart_related_streaming(ct, streaming_resp.body_iter)
+            try:
+                yield from parse_multipart_related_streaming(ct, streaming_resp.body_iter)
+            finally:
+                close = getattr(streaming_resp, "close", None)
+                if callable(close):
+                    close()
         else:
             response = self._request("GET", path, headers={"Accept": accept})
             _raise_for_status(response)
@@ -520,7 +613,7 @@ def dataset_from_dicom_json(item: Mapping[str, Any]) -> DicomDataset:
         if not isinstance(element, Mapping):
             raise DicomwebError(f"DICOM JSON element {key!r} must be an object.")
         tag = Tag.parse(key)
-        dataset.set(tag, _element_value_from_json(element))
+        dataset.set(tag, _element_value_from_json(element), vr=str(element.get("vr", "UN")))
     return dataset
 
 
@@ -552,14 +645,14 @@ def dataset_to_dicom_json(dataset: DicomDataset) -> Dict[str, Dict[str, Any]]:
 
     encoded: Dict[str, Dict[str, Any]] = {}
     for tag, value in dataset.items():
-        vr = _vr_for_tag(tag, value)
+        vr = dataset.vr(tag)
         element: Dict[str, Any] = {"vr": vr}
-        if isinstance(value, (bytes, bytearray)):
+        if isinstance(value, BulkDataReference):
+            element["BulkDataURI"] = value.uri
+        elif isinstance(value, (bytes, bytearray)):
             element["InlineBinary"] = base64.b64encode(bytes(value)).decode("ascii")
         elif value not in (None, ""):
             element["Value"] = _value_to_json(vr, value)
-        elif value == "":
-            element["Value"] = [""]
         encoded[f"{tag.group:04X}{tag.element:04X}"] = element
     return encoded
 
@@ -590,27 +683,8 @@ def build_multipart_related(
 
 
 def parse_multipart_related(content_type: str, body: bytes) -> Iterator[MultipartPart]:
-    """Parse a multipart/related body into parts.
-
-    The parser works on a bytes object today but exposes an iterator API so the
-    public contract can grow into chunked streaming without changing callers.
-    """
-
-    _boundary_from_content_type(content_type)
-    message = BytesParser(policy=default).parsebytes(
-        b"Content-Type: "
-        + content_type.encode("ascii")
-        + b"\r\nMIME-Version: 1.0\r\n\r\n"
-        + body
-    )
-    if not message.is_multipart():
-        raise DicomwebError("Multipart body does not contain the declared boundary.")
-    for part in message.iter_parts():
-        payload = part.get_payload(decode=True)
-        yield MultipartPart(
-            headers={key.lower(): value for key, value in part.items()},
-            body=payload or b"",
-        )
+    """Parse a complete multipart body, rejecting truncated responses."""
+    yield from parse_multipart_related_streaming(content_type, [body])
 
 
 def parse_multipart_related_streaming(
@@ -641,8 +715,13 @@ def parse_multipart_related_streaming(
     DicomwebError
         If *content_type* does not contain a ``boundary`` parameter.
     """
-    boundary_bytes = _boundary_from_content_type(content_type)
-    yield from _streaming_multipart_parser(boundary_bytes, chunks)
+    from dicomforge.multipart import iter_multipart_chunks
+    body = bytearray()
+    for chunk in iter_multipart_chunks(content_type, chunks):
+        body.extend(chunk.data)
+        if chunk.final:
+            yield MultipartPart(headers=chunk.headers, body=bytes(body))
+            body.clear()
 
 
 def build_multipart_related_streaming(
@@ -752,24 +831,30 @@ def _element_value_from_json(element: Mapping[str, Any]) -> Any:
             return converted
         return converted[0] if len(converted) == 1 else converted
     if "InlineBinary" in element:
-        return base64.b64decode(str(element["InlineBinary"]).encode("ascii"))
+        return base64.b64decode(str(element["InlineBinary"]).encode("ascii"), validate=True)
     if "BulkDataURI" in element:
-        return str(element["BulkDataURI"])
+        return BulkDataReference(str(element["BulkDataURI"]))
     return ""
 
 
 def _json_value_to_python(vr: str, value: Any) -> Any:
     if vr == "PN" and isinstance(value, Mapping):
-        return value.get("Alphabetic", "")
+        return "=".join(str(value.get(key, "")) for key in (
+            "Alphabetic", "Ideographic", "Phonetic")).rstrip("=")
     if vr == "SQ" and isinstance(value, Mapping):
         return dataset_from_dicom_json(value)
     return value
 
 
 def _value_to_json(vr: str, value: Any) -> List[Any]:
-    values = value if isinstance(value, list) else [value]
+    values = value if isinstance(value, (list, tuple)) else [value]
     if vr == "PN":
-        return [{"Alphabetic": str(item)} for item in values]
+        return [None if item is None else {
+            key: part for key, part in zip(("Alphabetic", "Ideographic", "Phonetic"),
+                                           str(item).split("=")) if part
+        } for item in values]
+    if vr == "AT":
+        return [f"{Tag.parse(item).group:04X}{Tag.parse(item).element:04X}" for item in values]
     if vr == "SQ":
         return [
             dataset_to_dicom_json(item) if isinstance(item, DicomDataset) else item
@@ -809,105 +894,6 @@ def _parse_part_headers(header_bytes: bytes) -> Dict[str, str]:
             name, _, value = line.partition(b":")
             headers[name.strip().decode("latin-1").lower()] = value.strip().decode("latin-1")
     return headers
-
-
-def _streaming_multipart_parser(
-    boundary_bytes: bytes,
-    chunks: Iterable[bytes],
-) -> Iterator[MultipartPart]:
-    """Core streaming multipart parser driven by a byte-chunk iterator.
-
-    Algorithm
-    ---------
-    The parser maintains a bytearray buffer that is filled lazily from
-    *chunks*.  Two helper closures—``_fill`` and ``_find``—extend the buffer
-    on demand and locate boundary markers, respectively.
-
-    RFC 2046 multipart structure::
-
-        preamble
-        --boundary\\r\\n
-        Header: value\\r\\n
-        \\r\\n
-        body bytes
-        \\r\\n--boundary\\r\\n
-        ...
-        \\r\\n--boundary--\\r\\n
-
-    The initial boundary uses ``--boundary\\r\\n`` (no leading CRLF).
-    Subsequent part separators use ``\\r\\n--boundary`` followed by either
-    ``\\r\\n`` (next part) or ``--`` (final boundary).
-    """
-    buf = bytearray()
-    chunk_iter = iter(chunks)
-    start_delim = b"--" + boundary_bytes      # initial delimiter
-    inner_delim = b"\r\n--" + boundary_bytes  # inter-part delimiter
-    max_buf = 256 * 1024 * 1024               # 256 MiB safety cap per part
-
-    def _fill(min_bytes: int) -> bool:
-        while len(buf) < min_bytes:
-            try:
-                buf.extend(next(chunk_iter))
-            except StopIteration:
-                return False
-        return True
-
-    def _find(pattern: bytes) -> int:
-        while True:
-            pos = buf.find(pattern)
-            if pos != -1:
-                return pos
-            if len(buf) > max_buf:
-                raise DicomwebError(
-                    "Streaming multipart parser exceeded the 256 MiB per-part buffer "
-                    "limit without finding a boundary marker. "
-                    "The response may be malformed or the boundary may be missing."
-                )
-            try:
-                buf.extend(next(chunk_iter))
-            except StopIteration:
-                return -1
-
-    # --- Phase 1: skip preamble and find the first boundary ---
-    pos = _find(start_delim + b"\r\n")
-    if pos == -1:
-        return
-    del buf[: pos + len(start_delim) + 2]  # consume preamble + boundary + CRLF
-
-    # --- Phase 2: parse parts ---
-    while True:
-        # Part headers are terminated by CRLFCRLF.
-        header_end = _find(b"\r\n\r\n")
-        if header_end == -1:
-            return
-        raw_headers = bytes(buf[:header_end])
-        del buf[: header_end + 4]  # consume headers + CRLFCRLF
-
-        headers = _parse_part_headers(raw_headers)
-
-        # Part body ends at the next inner delimiter (CRLF + --boundary).
-        body_end = _find(inner_delim)
-        if body_end == -1:
-            # No more boundaries — yield what is left as the final part body.
-            yield MultipartPart(headers=headers, body=bytes(buf))
-            return
-
-        body = bytes(buf[:body_end])
-        del buf[: body_end + len(inner_delim)]  # consume body + CRLF + delimiter
-
-        yield MultipartPart(headers=headers, body=body)
-
-        # After consuming the inner delimiter the next two bytes are either:
-        #   "--"   → final boundary; stop
-        #   "\r\n" → another part follows; continue
-        _fill(2)
-        if len(buf) < 2:
-            return
-        if buf[:2] == b"--":
-            return  # final boundary
-        if buf[:2] == b"\r\n":
-            del buf[:2]
-        # Else: malformed but continue best-effort
 
 
 def _multipart_generator(

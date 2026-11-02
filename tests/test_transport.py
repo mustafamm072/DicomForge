@@ -2,7 +2,7 @@
 
 import time
 import unittest
-from typing import Dict, Iterator, List, Optional
+from typing import Iterator, List, Optional
 from unittest.mock import MagicMock, patch
 
 from dicomforge.dicomweb import (
@@ -337,8 +337,8 @@ class StreamingMultipartParserTests(unittest.TestCase):
     def test_empty_generator_raises(self):
         """A missing/incomplete multipart body yields nothing (no exception)."""
         ct = 'multipart/related; type="application/dicom"; boundary=none'
-        result = list(parse_multipart_related_streaming(ct, iter([])))
-        self.assertEqual(result, [])
+        with self.assertRaises(DicomwebError):
+            list(parse_multipart_related_streaming(ct, iter([])))
 
     def test_large_payload_streaming(self):
         """A 1 MB payload delivered in 4 KB chunks is parsed correctly."""
@@ -598,7 +598,7 @@ class RequestsDicomwebTransportTests(unittest.TestCase):
         from dicomforge.transport import RequestsDicomwebTransport
 
         with patch.object(_requests.Session, "close") as mock_close:
-            with RequestsDicomwebTransport() as t:
+            with RequestsDicomwebTransport():
                 pass
             mock_close.assert_called_once()
 

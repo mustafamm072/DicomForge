@@ -45,7 +45,7 @@ def is_valid_uid(uid: object) -> bool:
         if not component:
             return False
         # Components must be all-digit
-        if not component.isdigit():
+        if not component.isascii() or not component.isdigit():
             return False
         # Leading zero only allowed when the component is the single digit "0"
         if len(component) > 1 and component[0] == "0":
@@ -93,19 +93,19 @@ def generate_uid(root: Optional[str] = None) -> str:
     '1.2.840.99999...'
     """
     active_root = "2.25" if root is None else root.strip().strip(".")
-    if not _UID_ROOT_RE.match(active_root):
+    if not is_valid_uid(active_root):
         raise ValueError(
-            f"UID root must contain only numeric dot-separated components, "
-            f"got {root!r}."
+            "UID root must contain only numeric dot-separated components, "
+            "without leading zeros."
         )
     max_suffix_len = 64 - len(active_root) - 1  # reserve 1 char for the separating dot
-    if max_suffix_len < 1:
+    if max_suffix_len < 39:
         raise ValueError(
-            f"UID root {root!r} is too long ({len(active_root)} chars); "
-            "no room remains for a unique suffix."
+            "UID root must leave 39 decimal digits for a full 128-bit suffix "
+            "(at most 24 characters)."
         )
     suffix = str(_uuid.uuid4().int)  # decimal integer, at most 39 digits
-    return f"{active_root}.{suffix[:max_suffix_len]}"
+    return f"{active_root}.{suffix}"
 
 
 class SopClassUID:

@@ -75,6 +75,13 @@ def compress_pixel_data(
         )
 
     meta = FrameMetadata.from_dataset(dataset)
+    if meta.bits_allocated not in {8, 16} or meta.photometric_interpretation not in {
+        "MONOCHROME1", "MONOCHROME2", "RGB", "YBR_FULL", "PALETTE COLOR"
+    } or (meta.samples_per_pixel > 1 and meta.is_signed):
+        raise DicomValidationError(
+            "Unsupported DICOM RLE image attributes (PS3.5 Table 8.2.2-1); "
+            "native encoding supports 8/16-bit standard monochrome or unsigned colour"
+        )
     pixel_data = dataset.get(Tag.PixelData)
     if not isinstance(pixel_data, (bytes, bytearray)):
         raise DicomValidationError(
@@ -101,14 +108,19 @@ def compress_pixel_data(
             )
         )
 
-    dataset.set(Tag.PixelData, EncapsulatedPixelData.from_frames(fragments))
+    dataset.set(Tag.PixelData, EncapsulatedPixelData.from_frames(fragments), vr="OB")
     dataset.set(Tag.TransferSyntaxUID, TransferSyntaxUID.RLELossless)
+    dataset.source_transfer_syntax = TransferSyntaxUID.RLELossless
+    for tag in ((0x7FE0, 0x0001), (0x7FE0, 0x0002)):
+        dataset.pop(Tag.parse(tag), None)
     if meta.samples_per_pixel > 1:
         dataset.set(Tag.PlanarConfiguration, 0)
     return dataset
 
 
-def decompress_pixel_data(dataset: DicomDataset) -> DicomDataset:
+def decompress_pixel_data(
+    dataset: DicomDataset, *, max_output_bytes: int = 512 * 1024 * 1024,
+) -> DicomDataset:
     """Decompress RLE Lossless ``PixelData`` in place to uncompressed bytes.
 
     ``TransferSyntaxUID`` becomes Explicit VR Little Endian and the decoded
@@ -139,6 +151,10 @@ def decompress_pixel_data(dataset: DicomDataset) -> DicomDataset:
         )
 
     meta = FrameMetadata.from_dataset(dataset)
+    if max_output_bytes <= 0:
+        raise ValueError("max_output_bytes must be positive")
+    if meta.expected_pixel_bytes > max_output_bytes:
+        raise DicomValidationError("Decompressed PixelData exceeds max_output_bytes")
     frames = rle_frame_fragments(dataset, meta)
     decoded = bytearray()
     for fragment in frames:
@@ -148,12 +164,16 @@ def decompress_pixel_data(dataset: DicomDataset) -> DicomDataset:
             columns=meta.columns,
             samples_per_pixel=meta.samples_per_pixel,
             bits_allocated=meta.bits_allocated,
+            max_decoded_bytes=max_output_bytes,
         )
     if len(decoded) % 2 == 1:
         decoded += b"\x00"
 
-    dataset.set(Tag.PixelData, bytes(decoded))
+    dataset.set(Tag.PixelData, bytes(decoded), vr="OB" if meta.bits_allocated <= 8 else "OW")
     dataset.set(Tag.TransferSyntaxUID, TransferSyntaxUID.ExplicitVRLittleEndian)
+    dataset.source_transfer_syntax = TransferSyntaxUID.ExplicitVRLittleEndian
+    for tag in ((0x7FE0, 0x0001), (0x7FE0, 0x0002)):
+        dataset.pop(Tag.parse(tag), None)
     if meta.samples_per_pixel > 1:
         dataset.set(Tag.PlanarConfiguration, 0)
     return dataset

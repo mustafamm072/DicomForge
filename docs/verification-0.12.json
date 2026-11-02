@@ -1,0 +1,121 @@
+{
+  "date": "2026-11-01",
+  "platform": "macOS arm64",
+  "version": "0.12.0",
+  "wheel_sha256": "2f274237339d597b97e87f48da7b13e65912d55099acafd23195514babf5a670",
+  "wheel_bytes": 154340,
+  "matrix": [
+    {
+      "python": "Python 3.9.25",
+      "mode": "core",
+      "tests": 391,
+      "skipped": 29,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.10.20",
+      "mode": "core",
+      "tests": 391,
+      "skipped": 29,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.11.14",
+      "mode": "core",
+      "tests": 391,
+      "skipped": 29,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.12.13",
+      "mode": "core",
+      "tests": 391,
+      "skipped": 29,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.13.12",
+      "mode": "core",
+      "tests": 391,
+      "skipped": 29,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.14.3",
+      "mode": "core",
+      "tests": 391,
+      "skipped": 29,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.9.25",
+      "mode": "extras",
+      "tests": 391,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.10.20",
+      "mode": "extras",
+      "tests": 391,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.11.14",
+      "mode": "extras",
+      "tests": 391,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.12.13",
+      "mode": "extras",
+      "tests": 391,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.13.12",
+      "mode": "extras",
+      "tests": 391,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.14.3",
+      "mode": "extras",
+      "tests": 391,
+      "skipped": 0,
+      "result": "passed"
+    },
+    {
+      "python": "Python 3.10.20",
+      "mode": "pydicom-2.4.4",
+      "tests": 391,
+      "skipped": 0,
+      "result": "passed"
+    }
+  ],
+  "cli": [
+    "module entry point",
+    "installed console entry point",
+    "inventory",
+    "validate",
+    "plan",
+    "release",
+    "resume",
+    "failure exit codes"
+  ],
+  "quality": {
+    "ruff": "passed",
+    "mypy": "passed",
+    "compileall": "passed",
+    "git_diff_check": "passed"
+  },
+  "limits": [
+    "No live Orthanc/dcm4chee deployment was exercised",
+    "Core mode intentionally skips optional-integration tests",
+    "GitHub-hosted workflow has not run until push"
+  ]
+}

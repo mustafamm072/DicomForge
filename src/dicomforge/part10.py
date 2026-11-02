@@ -32,11 +32,12 @@ from __future__ import annotations
 
 import struct
 import zlib
+import mmap
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
 
 from dicomforge.charset import PersonName, decode_text, encode_text
-from dicomforge.dataset import DicomDataset
+from dicomforge.dataset import DicomDataset, _deep_copy_value
 from dicomforge.dictionary import (
     BYTES_VRS,
     CHARSET_TEXT_VRS,
@@ -51,14 +52,17 @@ from dicomforge.dictionary import (
     UNDEFINED_LENGTH,
     padding_byte,
     vr_for_tag,
+    standard_dictionary,
 )
 from dicomforge.encapsulation import EncapsulatedPixelData, as_encapsulated
 from dicomforge.errors import CharacterSetError, DicomValidationError
 from dicomforge.tags import Tag
-from dicomforge.uids import ImplementationUID, TransferSyntaxUID
+from dicomforge.uids import ImplementationUID, TransferSyntaxUID, is_valid_uid
 from dicomforge.transfer_syntax import TransferSyntax
+from dicomforge.storage import write_bytes
 
 PathLike = Union[str, Path]
+Buffer = Union[bytes, bytearray, mmap.mmap]
 
 _PREAMBLE = b"\x00" * 128
 _MAGIC = b"DICM"
@@ -66,6 +70,7 @@ _GROUP_LENGTH_TAG = Tag(0x0002, 0x0000)
 _FILE_META_VERSION_TAG = Tag(0x0002, 0x0001)
 _IMPLEMENTATION_VERSION_TAG = Tag(0x0002, 0x0013)
 _FILE_META_GROUP = 0x0002
+_LUT_DESCRIPTOR_TAGS = frozenset({Tag(0x0028, element) for element in (0x1101, 0x1102, 0x1103, 0x3002)})
 
 #: Every VR code DicomForge recognises (used to sniff Explicit vs Implicit VR
 #: when reading a bare, preamble-less data set with ``force=True``).
@@ -83,6 +88,8 @@ class _Syntax:
     __slots__ = ("uid", "explicit", "endian", "deflated", "encapsulated")
 
     def __init__(self, uid: str) -> None:
+        if not is_valid_uid(uid):
+            raise DicomValidationError("Invalid Transfer Syntax UID")
         ts = TransferSyntax.from_uid(uid)
         self.uid = uid
         self.explicit = ts.is_explicit_vr
@@ -117,8 +124,13 @@ def read_file(
         auto-detecting Implicit vs Explicit VR Little Endian.
     """
 
-    data = Path(path).read_bytes()
-    return loads(data, stop_before_pixels=stop_before_pixels, force=force)
+    with Path(path).open("rb") as stream:
+        if not Path(path).stat().st_size:
+            raise DicomValidationError("Empty DICOM input")
+        with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as data:
+            dataset = loads(data, stop_before_pixels=stop_before_pixels, force=force)
+    dataset.source_path = str(Path(path).resolve())
+    return dataset
 
 
 def write_file(
@@ -127,6 +139,7 @@ def write_file(
     *,
     transfer_syntax: Optional[str] = None,
     ensure_file_meta: bool = True,
+    overwrite: bool = True,
 ) -> None:
     """Write *dataset* to *path* as a DICOM Part 10 file, without pydicom.
 
@@ -146,33 +159,35 @@ def write_file(
     data = dumps(
         dataset, transfer_syntax=transfer_syntax, ensure_file_meta=ensure_file_meta
     )
-    Path(path).write_bytes(data)
+    write_bytes(path, data, overwrite=overwrite)
 
 
 def loads(
-    data: Union[bytes, bytearray],
+    data: Union[bytes, bytearray, mmap.mmap],
     *,
     stop_before_pixels: bool = False,
     force: bool = False,
+    max_decompressed_bytes: int = 512 * 1024 * 1024,
 ) -> DicomDataset:
     """Parse an in-memory DICOM Part 10 byte string into a :class:`DicomDataset`."""
 
-    buffer = bytes(data)
+    buffer = data
     has_magic = len(buffer) >= 132 and buffer[128:132] == _MAGIC
 
     dataset = DicomDataset()
     if has_magic:
         meta, pos = _read_file_meta(buffer)
         for tag, value in meta.items():
-            dataset.set((tag.group, tag.element), value)
-        transfer_syntax = (
-            meta.get(Tag.TransferSyntaxUID) or TransferSyntaxUID.ExplicitVRLittleEndian
-        )
+            dataset.set(tag, value, vr=meta.vr(tag))
+        transfer_syntax = meta.get(Tag.TransferSyntaxUID)
+        if not transfer_syntax:
+            raise DicomValidationError("File Meta Information requires TransferSyntaxUID")
         syntax = _Syntax(str(transfer_syntax))
-        body = buffer[pos:]
+        body = buffer
     elif force:
         syntax = _detect_syntax(buffer)
         body = buffer
+        pos = 0
     else:
         raise DicomValidationError(
             "Not a DICOM Part 10 file (missing 'DICM' magic). Pass force=True to "
@@ -181,14 +196,30 @@ def loads(
 
     charset = dataset.get(Tag.SpecificCharacterSet)
     if syntax.deflated:
-        body = zlib.decompress(body, -zlib.MAX_WBITS)
+        if max_decompressed_bytes <= 0:
+            raise ValueError("max_decompressed_bytes must be positive")
+        decompressor = zlib.decompressobj(-zlib.MAX_WBITS)
+        try:
+            body = decompressor.decompress(buffer[pos:], max_decompressed_bytes + 1)
+        except zlib.error as exc:
+            raise DicomValidationError("Invalid deflated DICOM data") from exc
+        if len(body) > max_decompressed_bytes or decompressor.unconsumed_tail:
+            raise DicomValidationError("Deflated DICOM exceeds decompressed byte limit")
+        if not decompressor.eof:
+            raise DicomValidationError("Truncated deflated DICOM data")
+        pos = 0
         syntax = _EXPLICIT_LE
 
     main, _ = _read_elements(
-        body, 0, len(body), syntax, charset, stop_before_pixels=stop_before_pixels
+        body, pos, len(body), syntax, charset, stop_before_pixels=stop_before_pixels
     )
+    if not syntax.explicit:
+        _resolve_implicit_signed_vrs(main, syntax)
     for tag, value in main.items():
-        dataset.set((tag.group, tag.element), value)
+        dataset.set(tag, value, vr=main.vr(tag))
+    dataset._lexical.update(main._lexical)
+    dataset.source_transfer_syntax = str(transfer_syntax) if has_magic else syntax.uid
+    dataset.is_partial = stop_before_pixels
     return dataset
 
 
@@ -206,9 +237,21 @@ def dumps(
         or TransferSyntaxUID.ExplicitVRLittleEndian
     )
     syntax = _Syntax(str(transfer_syntax))
+    if dataset.is_partial:
+        raise DicomValidationError("Cannot save a metadata-only dataset; re-read the full file")
+    source_uid = (dataset.source_transfer_syntax or dataset.get(Tag.TransferSyntaxUID)
+                  or TransferSyntaxUID.ExplicitVRLittleEndian)
+    source = _Syntax(str(source_uid))
+    if source.encapsulated != syntax.encapsulated or (
+        source.encapsulated and source.uid != syntax.uid
+    ):
+        if Tag.PixelData in dataset:
+            raise DicomValidationError("Transfer syntax change requires explicit pixel transcoding")
 
+    if source.endian != syntax.endian:
+        dataset = _byte_swap_dataset(dataset, source, syntax)
+        source = syntax
     charset = dataset.get(Tag.SpecificCharacterSet)
-    bits_allocated = dataset.get(Tag.BitsAllocated)
     body = bytearray()
     for tag in sorted(dataset.keys()):
         if ensure_file_meta and tag.group == _FILE_META_GROUP:
@@ -216,8 +259,21 @@ def dumps(
         if syntax.encapsulated and tag == Tag.PixelData:
             body += _encode_encapsulated(dataset[tag], syntax)
             continue
-        vr = vr_for_tag(tag, bits_allocated=bits_allocated)
-        body += _encode_element(tag, vr, dataset[tag], syntax, charset)
+        vr = dataset.vr(tag)
+        value = dataset[tag]
+        lexical = dataset._lexical.get(tag)
+        if lexical is not None and lexical[1] == value:
+            value = lexical[0].decode("ascii")
+        if source.endian != syntax.endian and isinstance(value, (bytes, bytearray)):
+            widths = {"OW": 2, "OF": 4, "OL": 4, "OD": 8, "OV": 8}
+            width = widths.get(vr)
+            if width:
+                if len(value) % width:
+                    raise DicomValidationError("Binary value does not match its VR word size")
+                value = b"".join(value[i:i + width][::-1] for i in range(0, len(value), width))
+            elif vr == "UN" and dataset.source_transfer_syntax is not None:
+                raise DicomValidationError("Cannot byte-swap an unknown VR safely")
+        body += _encode_element(tag, vr, value, syntax, charset)
 
     if not ensure_file_meta:
         if syntax.uid not in (
@@ -245,12 +301,16 @@ def dumps(
 # ---------------------------------------------------------------------------
 
 
-def _read_file_meta(data: bytes) -> Tuple[DicomDataset, int]:
+def _read_file_meta(data: Buffer) -> Tuple[DicomDataset, int]:
     pos = 132
+    _require_bytes(data, pos, 8, len(data))
     group, element = struct.unpack_from("<HH", data, pos)
     if (group, element) == (_GROUP_LENGTH_TAG.group, _GROUP_LENGTH_TAG.element):
         # Conformant fast path: (0002,0000) declares the group's byte length.
         _tag, _vr, length, value_pos = _read_header(data, pos, _EXPLICIT_LE)
+        if _vr != "UL" or length != 4:
+            raise DicomValidationError("Invalid File Meta Information group length")
+        _require_bytes(data, value_pos, length, len(data))
         (group_length,) = struct.unpack_from("<I", data, value_pos)
         meta_start = value_pos + length
         meta_end = meta_start + group_length
@@ -269,10 +329,11 @@ def _read_file_meta(data: bytes) -> Tuple[DicomDataset, int]:
         if vr == "SQ" or length == UNDEFINED_LENGTH:
             value, pos = _read_sequence(data, value_pos, length, _EXPLICIT_LE, None)
         else:
-            raw = data[value_pos : value_pos + length]
+            _require_bytes(data, value_pos, length, len(data))
+            raw = bytes(data[value_pos : value_pos + length])
             value = _decode_value(vr or "UN", raw, _EXPLICIT_LE, None)
             pos = value_pos + length
-        meta.set((tag.group, tag.element), value)
+        meta.set(tag, value, vr=vr)
     return meta, pos
 
 
@@ -291,6 +352,10 @@ def _build_file_meta(dataset: DicomDataset, transfer_syntax: str) -> bytes:
         (Tag.ImplementationClassUID, "UI", implementation),
         (_IMPLEMENTATION_VERSION_TAG, "SH", "DICOMFORGE"),
     ]
+    regenerated = {tag for tag, _, _ in elements} | {_GROUP_LENGTH_TAG}
+    elements.extend((tag, dataset.vr(tag), dataset[tag]) for tag in dataset
+                    if tag.group == 2 and tag not in regenerated)
+    elements.sort(key=lambda element: element[0])
 
     meta_body = bytearray()
     for tag, vr, value in elements:
@@ -304,6 +369,9 @@ def _build_file_meta(dataset: DicomDataset, transfer_syntax: str) -> bytes:
 
 def _required_value(dataset: DicomDataset, primary: Tag, fallback: Tag) -> Any:
     value = dataset.get(primary)
+    other = dataset.get(fallback)
+    if value not in (None, "") and other not in (None, "") and str(value) != str(other):
+        raise DicomValidationError(f"File meta identity {primary} conflicts with {fallback}")
     if value not in (None, ""):
         return value
     value = dataset.get(fallback)
@@ -319,10 +387,16 @@ def _required_value(dataset: DicomDataset, primary: Tag, fallback: Tag) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def _read_header(data: bytes, pos: int, syntax: _Syntax) -> Tuple[Tag, Optional[str], int, int]:
+def _require_bytes(data: Any, pos: int, length: int, end: int) -> None:
+    if pos < 0 or length < 0 or pos + length > end or end > len(data):
+        raise DicomValidationError(f"Truncated DICOM value or container at byte offset {pos}")
+
+
+def _read_header(data: Buffer, pos: int, syntax: _Syntax) -> Tuple[Tag, Optional[str], int, int]:
     """Read one element header. Returns (tag, vr, value_length, new_pos)."""
 
     endian = syntax.endian
+    _require_bytes(data, pos, 8, len(data))
     group, element = struct.unpack_from(endian + "HH", data, pos)
     pos += 4
     tag = Tag(group, element)
@@ -332,9 +406,17 @@ def _read_header(data: bytes, pos: int, syntax: _Syntax) -> Tuple[Tag, Optional[
         return tag, None, length, pos + 4
 
     if syntax.explicit:
-        vr = data[pos : pos + 2].decode("ascii")
+        try:
+            vr = data[pos : pos + 2].decode("ascii")
+        except UnicodeError as exc:
+            raise DicomValidationError(f"Invalid VR at byte offset {pos}") from exc
+        if vr not in _ALL_VRS:
+            raise DicomValidationError(f"Unknown VR at byte offset {pos}")
         pos += 2
         if vr in LONG_FORM_VRS:
+            _require_bytes(data, pos, 6, len(data))
+            if data[pos:pos + 2] != b"\x00\x00":
+                raise DicomValidationError(f"Invalid reserved bytes at offset {pos}")
             pos += 2  # two reserved bytes
             (length,) = struct.unpack_from(endian + "I", data, pos)
             pos += 4
@@ -349,62 +431,118 @@ def _read_header(data: bytes, pos: int, syntax: _Syntax) -> Tuple[Tag, Optional[
 
 
 def _read_elements(
-    data: bytes,
+    data: Buffer,
     pos: int,
     end: int,
     syntax: _Syntax,
     charset: Any,
     *,
     stop_before_pixels: bool = False,
+    delimiter: Optional[Tag] = None,
+    depth: int = 0,
 ) -> Tuple[DicomDataset, int]:
+    if depth > 64:
+        raise DicomValidationError("DICOM nesting exceeds 64 levels")
+    _require_bytes(data, pos, 0, end)
     dataset = DicomDataset()
     active_charset = charset
-    while pos < end and end - pos >= 8:
+    while pos < end:
+        _require_bytes(data, pos, 8, end)
         tag, vr, length, pos = _read_header(data, pos, syntax)
+        _require_bytes(data, pos, 0, end)
         if tag in (ITEM_DELIMITER_TAG, SEQUENCE_DELIMITER_TAG):
+            if tag != delimiter or length != 0:
+                raise DicomValidationError(f"Unexpected delimiter at byte offset {pos}")
             return dataset, pos
         if stop_before_pixels and tag == Tag.PixelData:
             return dataset, pos
 
+        value: Any
         if length == UNDEFINED_LENGTH and tag == Tag.PixelData:
             value, pos = _read_encapsulated(data, pos, syntax)
         elif vr == "SQ" or length == UNDEFINED_LENGTH:
-            value, pos = _read_sequence(data, pos, length, syntax, active_charset)
+            value, pos = _read_sequence(data, pos, length, syntax, active_charset,
+                                         depth=depth + 1, end=end)
         else:
-            raw = data[pos : pos + length]
+            _require_bytes(data, pos, length, end)
+            raw = bytes(data[pos : pos + length])
             pos += length
-            value = _decode_value(vr or "UN", raw, syntax, active_charset)
+            value = _decode_value(vr or "UN", raw, syntax, active_charset, tag=tag)
 
-        dataset.set((tag.group, tag.element), value)
+        dataset.set(tag, value, vr=vr)
+        if vr in NUMERIC_STRING_VRS:
+            dataset._lexical[tag] = (bytes(raw), _deep_copy_value(value))
         if tag == Tag.SpecificCharacterSet:
             active_charset = value
+    if delimiter is not None:
+        raise DicomValidationError("Missing DICOM item delimiter")
     return dataset, pos
 
 
+def _resolve_implicit_signed_vrs(
+    dataset: DicomDataset, syntax: _Syntax, pixel_representation: Optional[int] = None,
+) -> None:
+    """Resolve signed implicit VRs after local/ancestor pixel context is known.
+
+    Ambiguous elements may precede PixelRepresentation or occur in a sequence
+    before the parent's pixel module. Their provisional US decoding retains all
+    bits, so it can be reinterpreted without losing values after parsing ends.
+    Explicit VR input is never reinterpreted by this pass.
+    """
+    pixel_representation = dataset.get(Tag.PixelRepresentation, pixel_representation)
+    dictionary = standard_dictionary()
+    for tag, value in list(dataset.items()):
+        entry = dictionary.get(f"{tag.group:04X}{tag.element:04X}")
+        if entry and entry[0] == "US or SS" and pixel_representation is not None:
+            resolved = vr_for_tag(tag, pixel_representation=pixel_representation)
+            previous = dataset.vr(tag)
+            if previous != resolved:
+                if value is not None:
+                    raw = _encode_numbers(previous, value, syntax.endian, tag=tag)
+                    value = _decode_numbers(resolved, raw, syntax.endian, tag=tag)
+                dataset.set(tag, value, vr=resolved)
+        children = value if isinstance(value, (list, tuple)) else [value]
+        for child in children:
+            if isinstance(child, DicomDataset):
+                _resolve_implicit_signed_vrs(child, syntax, pixel_representation)
+
+
 def _read_sequence(
-    data: bytes, pos: int, seq_length: int, syntax: _Syntax, charset: Any
+    data: Buffer, pos: int, seq_length: int, syntax: _Syntax, charset: Any,
+    *, depth: int = 0, end: Optional[int] = None,
 ) -> Tuple[List[DicomDataset], int]:
     items: List[DicomDataset] = []
-    seq_end = len(data) if seq_length == UNDEFINED_LENGTH else pos + seq_length
+    container_end = len(data) if end is None else end
+    seq_end = container_end if seq_length == UNDEFINED_LENGTH else pos + seq_length
+    _require_bytes(data, pos, 0, seq_end)
+    if seq_end > container_end:
+        raise DicomValidationError("Sequence extends beyond its enclosing container")
     while pos < seq_end:
         tag, _vr, item_length, pos = _read_header(data, pos, syntax)
         if tag == SEQUENCE_DELIMITER_TAG:
-            break
+            if seq_length != UNDEFINED_LENGTH or item_length != 0:
+                raise DicomValidationError("Unexpected sequence delimiter")
+            return items, pos
         if tag != ITEM_TAG:
             raise DicomValidationError(
                 f"Expected a sequence Item (FFFE,E000) but found {tag}."
             )
         if item_length == UNDEFINED_LENGTH:
-            item, pos = _read_elements(data, pos, len(data), syntax, charset)
+            item, pos = _read_elements(data, pos, seq_end, syntax, charset,
+                                       delimiter=ITEM_DELIMITER_TAG, depth=depth)
         else:
-            item, _ = _read_elements(data, pos, pos + item_length, syntax, charset)
+            if pos + item_length > seq_end:
+                raise DicomValidationError("Sequence item extends beyond its container")
+            item, _ = _read_elements(data, pos, pos + item_length, syntax, charset, depth=depth)
             pos += item_length
         items.append(item)
+    if seq_length == UNDEFINED_LENGTH:
+        raise DicomValidationError("Missing DICOM sequence delimiter")
     return items, pos
 
 
 def _read_encapsulated(
-    data: bytes, pos: int, syntax: _Syntax
+    data: Buffer, pos: int, syntax: _Syntax
 ) -> Tuple[EncapsulatedPixelData, int]:
     """Read undefined-length (encapsulated) pixel data, keeping fragments."""
 
@@ -412,42 +550,55 @@ def _read_encapsulated(
     while pos < len(data):
         tag, _vr, length, pos = _read_header(data, pos, syntax)
         if tag == SEQUENCE_DELIMITER_TAG:
+            if length != 0 or not fragments:
+                raise DicomValidationError("Invalid encapsulated pixel delimiter or offset table")
             break
         if tag != ITEM_TAG:
             raise DicomValidationError(
                 f"Expected an encapsulated pixel-data Item (FFFE,E000) but found {tag}."
             )
+        _require_bytes(data, pos, length, len(data))
+        if length % 2:
+            raise DicomValidationError("Encapsulated fragment length must be even")
         fragments.append(bytes(data[pos : pos + length]))
         pos += length
+    else:
+        raise DicomValidationError("Missing encapsulated pixel-data delimiter")
     # Item 0 is the Basic Offset Table; the remaining items are pixel fragments.
     # A lone item (non-conformant file without an offset table) is treated as
     # the pixel fragment itself, matching the pre-0.11 flattened behaviour.
-    if len(fragments) > 1:
+    if fragments:
         offsets = _parse_basic_offset_table(fragments[0], syntax)
         return EncapsulatedPixelData(fragments[1:], offsets), pos
     return EncapsulatedPixelData(fragments), pos
 
 
 def _parse_basic_offset_table(raw: bytes, syntax: _Syntax) -> Tuple[int, ...]:
+    if len(raw) % 4:
+        raise DicomValidationError("Basic Offset Table length must be divisible by four")
     count = len(raw) // 4
     if count == 0:
         return ()
     return struct.unpack_from(syntax.endian + "I" * count, raw)
 
 
-def _decode_value(vr: str, raw: bytes, syntax: _Syntax, charset: Any) -> Any:
+def _decode_value(
+    vr: str, raw: bytes, syntax: _Syntax, charset: Any, *, tag: Optional[Tag] = None,
+) -> Any:
     if vr in BYTES_VRS:
         return bytes(raw)
     if vr == "AT":
         return _decode_at(raw, syntax.endian)
     if vr in NUMERIC_VR_FORMATS:
-        return _decode_numbers(vr, raw, syntax.endian)
+        return _decode_numbers(vr, raw, syntax.endian, tag=tag)
     if vr in TEXT_VRS:
         return _decode_text(vr, raw, charset)
     return bytes(raw)
 
 
 def _decode_at(raw: bytes, endian: str) -> Any:
+    if len(raw) % 4:
+        raise DicomValidationError("AT value length must be divisible by four")
     count = len(raw) // 4
     tags = []
     for index in range(count):
@@ -458,9 +609,14 @@ def _decode_at(raw: bytes, endian: str) -> Any:
     return tags[0] if len(tags) == 1 else tags
 
 
-def _decode_numbers(vr: str, raw: bytes, endian: str) -> Any:
+def _decode_numbers(vr: str, raw: bytes, endian: str, *, tag: Optional[Tag] = None) -> Any:
+    if vr == "SS" and tag in _LUT_DESCRIPTOR_TAGS and len(raw) == 6:
+        # PS3.3 LUT descriptors: only the first mapped value is signed.
+        return list(struct.unpack(endian + "HhH", raw))
     fmt = NUMERIC_VR_FORMATS[vr]
     size = struct.calcsize(endian + fmt)
+    if len(raw) % size:
+        raise DicomValidationError("Numeric value length does not match its VR")
     count = len(raw) // size
     if count == 0:
         return None
@@ -479,10 +635,9 @@ def _decode_text(vr: str, raw: bytes, charset: Any) -> Any:
 
 
 def _decode_charset(raw: bytes, charset: Any) -> str:
-    try:
-        return decode_text(raw, charset)
-    except CharacterSetError:
-        return raw.decode("ascii", errors="replace")
+    if raw.isascii() and b"\x1b" not in raw:
+        return raw.decode("ascii")
+    return decode_text(raw, charset)
 
 
 def _parse_number_string(vr: str, text: str) -> Any:
@@ -499,7 +654,7 @@ def _parse_number_string(vr: str, text: str) -> Any:
     return values[0] if len(values) == 1 else values
 
 
-def _detect_syntax(data: bytes) -> _Syntax:
+def _detect_syntax(data: Buffer) -> _Syntax:
     if len(data) >= 6:
         candidate = data[4:6]
         try:
@@ -540,6 +695,8 @@ def _encode_element(tag: Tag, vr: str, value: Any, syntax: _Syntax, charset: Any
 
 
 def _encode_value(tag: Tag, vr: str, value: Any, syntax: _Syntax, charset: Any) -> bytes:
+    if value is None or (isinstance(value, str) and not value):
+        return b""
     if vr == "SQ":
         return _encode_sequence(value, syntax, charset)
     if vr in BYTES_VRS:
@@ -555,7 +712,7 @@ def _encode_value(tag: Tag, vr: str, value: Any, syntax: _Syntax, charset: Any) 
     if vr == "AT":
         return _encode_at(value, syntax.endian)
     if vr in NUMERIC_VR_FORMATS:
-        return _encode_numbers(vr, value, syntax.endian)
+        return _encode_numbers(vr, value, syntax.endian, tag=tag)
     if vr in TEXT_VRS:
         return _encode_text(vr, value, charset)
     if isinstance(value, (bytes, bytearray)):
@@ -624,11 +781,14 @@ def _encode_sequence(value: Any, syntax: _Syntax, charset: Any) -> bytes:
                 f"got {type(item).__name__}."
             )
         item_charset = item.get(Tag.SpecificCharacterSet, charset)
-        item_bits = item.get(Tag.BitsAllocated)
         body = bytearray()
         for tag in sorted(item.keys()):
-            vr = vr_for_tag(tag, bits_allocated=item_bits)
-            body += _encode_element(tag, vr, item[tag], syntax, item_charset)
+            vr = item.vr(tag)
+            value = item[tag]
+            lexical = item._lexical.get(tag)
+            if lexical is not None and lexical[1] == value:
+                value = lexical[0].decode("ascii")
+            body += _encode_element(tag, vr, value, syntax, item_charset)
         out += struct.pack(syntax.endian + "HH", ITEM_TAG.group, ITEM_TAG.element)
         out += struct.pack(syntax.endian + "I", len(body))
         out += body
@@ -644,9 +804,11 @@ def _encode_at(value: Any, endian: str) -> bytes:
     return bytes(out)
 
 
-def _encode_numbers(vr: str, value: Any, endian: str) -> bytes:
+def _encode_numbers(vr: str, value: Any, endian: str, *, tag: Optional[Tag] = None) -> bytes:
     fmt = NUMERIC_VR_FORMATS[vr]
     values = value if isinstance(value, (list, tuple)) else [value]
+    if vr == "SS" and tag in _LUT_DESCRIPTOR_TAGS and len(values) == 3:
+        return struct.pack(endian + "HhH", *(int(item) for item in values))
     converter = float if vr in ("FL", "FD") else int
     packed = bytearray()
     for item in values:
@@ -697,3 +859,27 @@ def _format_decimal_string(value: Any) -> str:
     if len(text) <= 16:
         return text
     return f"{float(value):.10E}"
+
+
+def _byte_swap_dataset(dataset: DicomDataset, source: _Syntax, target: _Syntax) -> DicomDataset:
+    """Convert endian-sensitive raw VR values recursively without mutating input."""
+    copied = dataset.copy(deep=True)
+    widths = {"OW": 2, "OF": 4, "OL": 4, "OD": 8, "OV": 8}
+    for path, element in list(copied.iter_paths()):
+        value = element.value
+        if not isinstance(value, (bytes, bytearray)):
+            continue
+        width = widths.get(element.vr)
+        if element.vr == "UN" and dataset.source_transfer_syntax is not None:
+            raise DicomValidationError("Cannot byte-swap unknown VR safely; retain source syntax")
+        if width is None:
+            continue
+        if len(value) % width:
+            raise DicomValidationError("Binary VR value has an invalid word length")
+        parent = copied
+        for index in range(0, len(path) - 1, 2):
+            parent = parent[path[index]][path[index + 1]]
+        parent.set(element.tag, b"".join(value[i:i + width][::-1]
+                                         for i in range(0, len(value), width)))
+    copied.source_transfer_syntax = target.uid
+    return copied

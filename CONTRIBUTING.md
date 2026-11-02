@@ -42,3 +42,17 @@ Every pull request that adds or changes user-visible behavior must also update:
 
 Stale documentation is treated as a bug; features that ship without these
 updates will be asked to add them before merge.
+
+## Required release checks (0.12+)
+
+- Run `python -m unittest`, including subprocess CLI tests.
+- Run `python -m ruff check src tests tools` and `python -m mypy src/dicomforge`.
+- Build a wheel/source archive and test the installed wheel, not just PYTHONPATH.
+- Verify core-only import, dictionary/type-marker packaging, and optional extras
+  on Python 3.9–3.14. `tools/check_matrix.py --help` documents the local runner.
+- Verify pydicom 2.4 separately from current pydicom, and both read/write backend
+  directions whenever file or compressed-pixel representation changes.
+- Record skipped tests and remaining deployment limits. Passing synthetic tests
+  is not vendor/PACS certification. Do not describe unchecked scopes as passed.
+- Changes to release policies, dictionary snapshots, or UID mapping strategies
+  need version/migration notes and reproducibility evidence.

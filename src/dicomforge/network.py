@@ -13,7 +13,7 @@ import base64
 import json
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
+from typing import cast, Any, ClassVar, Dict, List, Optional, Tuple, Union
 
 from dicomforge.dataset import DicomDataset
 from dicomforge.errors import DicomForgeError
@@ -356,9 +356,9 @@ class DimseServer:
 
     @property
     def sockets(self) -> Tuple[Any, ...]:
-        if self._server is None or self._server.sockets is None:
+        if self._server is None or getattr(self._server, "sockets", ()) is None:
             return ()
-        return tuple(self._server.sockets)
+        return tuple(getattr(self._server, "sockets", ()))
 
     @property
     def bound_port(self) -> int:
@@ -542,7 +542,7 @@ class DimseServer:
     ) -> Iterable[DicomDataset]:
         if self.find_handler is None:
             return []
-        return await _maybe_await(self.find_handler(request, query))
+        return cast(Iterable[DicomDataset], await _maybe_await(self.find_handler(request, query)))
 
     async def _handle_move(
         self,

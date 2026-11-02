@@ -132,10 +132,16 @@ class FrameMetadata:
 
     @property
     def expected_frame_bytes(self) -> int:
+        if self.bits_allocated == 1:
+            return (self.frame_values + 7) // 8
+        if self.photometric_interpretation == "YBR_FULL_422":
+            return self.frame_pixels * 2 * self.bytes_per_sample
         return self.frame_values * self.bytes_per_sample
 
     @property
     def expected_pixel_bytes(self) -> int:
+        if self.bits_allocated == 1:
+            return (self.frame_values * self.number_of_frames + 7) // 8
         return self.expected_frame_bytes * self.number_of_frames
 
     @property
@@ -282,7 +288,7 @@ def check_pixel_capability(
 
     active_registry = registry or default_registry()
     try:
-        codec = active_registry.find(syntax)
+        codec = active_registry.find(syntax, dataset=dataset)
     except UnsupportedTransferSyntaxError as exc:
         if syntax.is_compressed:
             raise UnsupportedTransferSyntaxError(
@@ -352,8 +358,8 @@ def voi_window_bounds(center: Number, width: Number) -> tuple[float, float]:
     """Return inclusive VOI window lower and upper bounds."""
 
     width_value = float(width)
-    if width_value <= 0:
-        raise PixelMetadataError(f"WindowWidth must be positive, got {width}.")
+    if width_value < 1:
+        raise PixelMetadataError("Linear WindowWidth must be at least one")
     center_value = float(center)
     lower = center_value - 0.5 - (width_value - 1) / 2
     upper = center_value - 0.5 + (width_value - 1) / 2

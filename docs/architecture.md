@@ -1,104 +1,57 @@
 # Architecture
 
-## Product stance
+DICOMForge adds collection validation and reproducible processing workflows while
+keeping the core dependency-free. Optional integrations remain ordinary extras.
 
-DICOMForge should compete by being easier to trust and easier to adopt, not by
-shipping every feature in the first release. The core package stays lightweight;
-heavy capabilities are optional plugins.
+## Shared contracts
 
-## Core packages
+`DicomDataset` retains the simple tag-to-value interface. A parallel VR map and
+unchanged numeric-string lexical records preserve input semantics. `DataElement`
+provides a value-hidden representation; indexed paths identify nested items.
+`DatasetView` validates existing pydicom objects without copying their pixels.
+The bundled standard dictionary loads lazily through gzip/json.
 
-- `dicomforge.tags`: typed tags and keyword lookup for core image and
-  de-identification attributes
-- `dicomforge.dataset`: predictable dataset wrapper
-- `dicomforge.transfer_syntax`: transfer syntax classification
-- `dicomforge.codecs`: codec capability registry
-- `dicomforge.charset`: Specific Character Set normalization, text
-  encode/decode checks, and structured DICOM person names
-- `dicomforge.pixels`: frame metadata, pixel safety checks, and lightweight
-  pixel helpers
-- `dicomforge.anonymize`: de-identification profiles, UID remapping, private
-  tag policy, and audit reports
-- `dicomforge.dictionary`: shared tag → VR data dictionary and VR category
-  metadata, used by both file IO backends
-- `dicomforge.part10`: dependency-free native DICOM Part 10 reader/writer —
-  uncompressed transfer syntaxes end to end, plus encapsulated pixel-data
-  fragment framing for compressed syntaxes
-- `dicomforge.encapsulation`: fragment- and offset-table-preserving
-  `EncapsulatedPixelData` value model for compressed PixelData
-- `dicomforge.rle`: dependency-free RLE Lossless frame codec (PS3.5 Annex G)
-- `dicomforge.transcode`: one-call in-place dataset compression and
-  decompression between uncompressed syntaxes and RLE Lossless
-- `dicomforge.adapt`: optional adapters for pydicom, NumPy arrays, Pillow
-  images/JPEG previews, DICOM JSON, and pynetdicom events
-- `dicomforge.api`: higher-level lazy file and batch helpers for application
-  code
-- `dicomforge.io`: backend-based file IO — native by default, pydicom when
-  installed or required for compressed pixel data
-- `dicomforge.network`: dependency-free association and DIMSE-style command primitives
-- `dicomforge.dicomweb`: dependency-free DICOMweb URL, transport, JSON, and multipart helpers
-- `dicomforge.transport`: optional DICOMweb HTTP transports with requests,
-  bearer-token auth, retry, and streaming helpers
-- `dicomforge.uids`: selected standard UID and DIMSE status constants, plus
-  UID grammar validation and UUID-derived UID generation
+`io` makes backend selection deterministic. `part10` owns the native preparation
+contract, bounds checks and endian conversion; adapters normalize sequences and
+encapsulation. Both file backends use `storage` for atomic publication.
+`EncapsulatedPixelData` retains the backward-compatible bytes interface, but
+conversion to pydicom's wire framing is explicit. Plain payload and framed bytes
+are never intentionally interchanged. A future major version may replace the
+bytes subclass with a standalone value object.
 
-## De-identification stance
+`pixels` validates metadata and byte counts. `adapt` implements native NumPy,
+RLE, and optional pydicom frame paths, then explicit modality/display processing.
+`Codec.decode_frame` provides executable extensions; `probe` expresses
+instance-specific limitations. Heavy backends are imported only on use.
 
-The 0.3 de-identification API is intentionally conservative and auditable. It
-models each change as a rule, applies deterministic UID remapping through a
-salted mapper, and returns an `AuditReport` for downstream logging or review.
-The basic profile targets common non-pixel identifying attributes from the
-DICOM PS3.15 Basic Application Level Confidentiality Profile. It does not claim
-that pixel data, burned-in annotations, structured report text, or every
-modality-specific attribute has been made non-identifying.
+## Collection workflows
 
-Private attributes are removed by default. Callers can opt into
-`PrivateTagAction.KEEP` when private attributes have been separately reviewed.
-The older `remove_private_tags` argument on `apply` and `apply_with_report`
-remains available as a per-call override for compatibility.
+`collection` provides an inventory/resource plan, conventional CT/MR metadata
+validation, project-keyed ReleasePolicy, and checkpointed release_collection.
+It does not introduce distributed execution, a database service, or an implicit
+cloud dependency. Reports use input ordinals and stable codes. Manifests retain
+controlled output-integrity evidence without source filenames or identity values.
+`cli` exposes the same APIs through inventory/validate/plan/release commands.
 
-Commercial deployments should treat this module as one component in a governed
-de-identification workflow: choose a stable project-specific UID salt, decide
-whether private attributes can be retained, run pixel and metadata review, and
-document the profile options used for each data release.
+Release atomicity is per instance. Checkpoints support restart and detect changed
+keys, source content, or outputs. Metadata-only preflight is followed by full file
+read, transformation, atomic write, independent reopen and structural checks.
+The implementation does not assess recognizable anatomy, acquisition completeness,
+or all modality-specific identity channels. These boundaries travel in reports.
 
-## Optional packages planned
+## Transport
 
-- `dicomforge-pixels`: advanced NumPy/Pillow pixel transforms and bulk array operations
-- `dicomforge-codecs-openjpeg`: JPEG 2000 codec bridge
-- `dicomforge-network`: full DICOM Upper Layer and DIMSE services
-- `dicomforge-dicomweb`: curated integration-tested DICOMweb PACS/VNA profiles
-- `dicomforge-iods`: validated high-level IOD builders
+`dicomweb` owns query/JSON/business outcomes and injectable request protocols.
+`multipart` emits verified binary chunks for bounded-memory sinks. `transport`
+provides optional requests pooling, TLS, retries and closeable responses.
+Multipart convenience APIs buffer one part; retrieval to files stages each instance.
+The historical `network` JSON simulator is experimental; pynetdicom owns actual
+DICOM association interoperability.
 
-## Lessons from existing libraries
+## Release evidence
 
-fo-dicom is mature and valuable, but public issue and documentation signals show
-areas a new design should handle deliberately:
-
-- codec packages must be explicit and capability-queryable
-- transfer syntax metadata can be misleading and needs validation hooks
-- parallel association handling needs a clear concurrency model
-- datasets need typed set/get helpers
-- character sets must be tested, especially Japanese encodings
-- network sockets must close reliably on exceptions
-- low-level flexibility should not force every user to know the whole standard
-
-Python already has strong libraries, especially `pydicom`, `pynetdicom`, and
-`highdicom`. DICOMForge should integrate where helpful rather than pretending
-those ecosystems do not exist.
-
-The in-core networking module is deliberately not a DICOM Upper Layer PDU
-implementation. It uses a small framed JSON transport to exercise association
-lifecycle, command handlers, backpressure, and cancellation behavior without
-adding a networking dependency to core. Full wire-compatible DIMSE belongs in
-the planned `dicomforge-network` package.
-
-See [conformance.md](conformance.md) for the current implementation boundary by
-module.
-
-Sources reviewed:
-
-- fo-dicom repository and public issue listing
-- fo-dicom supported transfer syntax documentation
-- pydicom project description
-- highdicom project description and paper abstract
+Tests exercise backend combinations and independent pydicom decoding, parser
+corruption, privacy output, CLI subprocesses, geometry and interrupted jobs.
+CI tests installed wheels with and without extras across Python 3.9–3.14. Ruff
+and strict core mypy checks run separately on a supported toolchain. Versioned
+migration and support boundaries are part of each user-visible change.

@@ -36,7 +36,7 @@ def main() -> None:
     dataset = build_dataset()
 
     # 1. Write a conformant DICOM Part 10 file with the native backend.
-    #    backend="auto" (the default) would use pydicom when it is installed;
+    #    backend="auto" (the default) always uses the native backend;
     #    here we pin the native codec so the example is dependency-free.
     dcmwrite("native_example.dcm", dataset, backend="native")
 

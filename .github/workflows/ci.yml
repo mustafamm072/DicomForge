@@ -4,23 +4,69 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: Python ${{ matrix.python-version }} / ${{ matrix.install }}
+    # setup-python has no Python 3.9 build for Ubuntu 26.04 (ubuntu-latest).
+    runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
-
+        install: [core, extras]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install package
-        run: python -m pip install -e ".[dev]"
-      - name: Unit tests
-        run: PYTHONPATH=src python -m unittest
+      - name: Build wheel
+        run: python -m pip wheel --no-deps --wheel-dir dist .
+      - name: Install core wheel without optional dependencies
+        if: matrix.install == 'core'
+        run: python -m pip install --no-deps dist/*.whl
+      - name: Install wheel and optional integrations
+        if: matrix.install == 'extras'
+        run: |
+          python -m pip install dist/*.whl
+          python -m pip install "pydicom>=2.4" "numpy>=1.23" "pillow>=10" "requests>=2.28" "pynetdicom>=2.0"
+      - name: Unit and subprocess CLI tests against installed wheel
+        run: DICOMFORGE_TEST_INSTALLED=1 python -m unittest -v
+      - name: Console entry point
+        run: |
+          dicomforge --version
+          dicomforge --help
+      - name: Executable synthetic research workflow
+        run: python examples/research_release.py
       - name: Compile check
-        run: PYTHONPATH=src python -m compileall -q src tests
+        run: python -m compileall -q src tests
+      - name: Verify lightweight core and packaged dictionary/type marker
+        if: matrix.install == 'core'
+        run: python tools/check_package.py
+
+  pydicom-legacy:
+    name: pydicom 2.4 compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: python -m pip install . "pydicom==2.4.4" "numpy<2" "pillow>=10" "requests>=2.28"
+      - run: DICOMFORGE_TEST_INSTALLED=1 python -m unittest -v
+
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install ".[dev]"
+      - run: python -m ruff check src tests tools
+      - run: python -m mypy src/dicomforge
+      - run: python -m build
+      - name: Check source and wheel metadata
+        run: python tools/check_package.py

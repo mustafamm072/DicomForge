@@ -1,93 +1,32 @@
-# Compatibility Matrix
+# Compatibility contract (0.12)
 
-## Python Versions
+| Capability | Status | Boundary |
+| --- | --- | --- |
+| Python 3.9–3.14 | Supported | Installed-wheel matrix, core and extras, CLI subprocess tests |
+| Zero mandatory dependencies | Supported | Optional backends are not imported by core import; wheel smoke test |
+| Standard dictionary | Bundled snapshot | 5,091 entries, pydicom 3.0.2 provenance; explicit VR takes precedence |
+| Native uncompressed/deflated I/O | Supported | Four syntaxes; contextual implicit signed VRs; bounded inflation; no byte-for-byte guarantee |
+| Metadata-only scans | mmap | Stops before native pixel payload; deflate expands the dataset |
+| pydicom adapters | 2.4 / 3.x | Explicit backend; normalized sequences/fragments; tested cross-writes |
+| RLE dataset compression | Native | Supported standard 8/16-bit combinations; 32-bit image encoding rejected |
+| JPEG/JPEG-LS/JPEG 2000 | Optional | pydicom plus installed decoder plugin; no bundled native JPEG encoders |
+| Native integer arrays | Optional NumPy | 1/8/16/32/64 allocation, stored-bit normalization, native YBR_FULL_422 |
+| JPEG display previews | Optional NumPy/Pillow | Rescale/linear VOI; not complete presentation-state or diagnostic rendering |
+| VR/VM/UID validation | Supported lint | Indexed paths; separate from full IOD conformance |
+| Image-profile validation | Partial | CT/MR/US/CR/SC baseline, not all modules/conditions |
+| Collection validation | Conventional CT/MR | Single-frame geometry, reference closure, resources; explicit unchecked scopes |
+| Reproducible release | Conventional CT/MR metadata | Project key, scalar/multi-valued date shifts, external pixel review, atomic files, manifests, resume |
+| Confidentiality profile | Subset | No universal PS3.15, OCR, recognizable-anatomy, SR or document cleaning claim |
+| DICOM JSON | Preserved VR/PN/null/bulk | BulkDataURI unresolved; not auto-fetched |
+| DICOMweb streams | Supported mechanics | Strict framing, closeable responses, chunk sinks and size limits |
+| Retry | Safe methods by default | Replayable bodies, attempt/time budget; uploads need explicit safe semantics |
+| STOW outcomes | Typed response parser | Per-instance stored/failed/warnings; empty response is unassessed |
+| DIMSE networking | pynetdicom integration | Historical JSON protocol is experimental, not wire compatible |
+| Vendor/PACS certification | Not claimed | Requires integration evidence against the deployment's actual versions |
 
-DICOMForge uses `from __future__ import annotations` throughout and targets
-Python 3.9+.  All six supported versions are exercised in CI.
+The package keeps its MIT license. Optional dependency licensing and the bundled
+dictionary's source license are documented in THIRD_PARTY_NOTICES.md. Python
+3.9 can use pydicom 2.4 when newer releases require a newer interpreter.
 
-| Python | Status |
-|--------|--------|
-| 3.9    | ✅ Supported — minimum required version (past upstream end-of-life; kept as the floor for long-lived deployments) |
-| 3.10   | ✅ Supported |
-| 3.11   | ✅ Supported |
-| 3.12   | ✅ Supported |
-| 3.13   | ✅ Supported |
-| 3.14   | ✅ Supported |
-
-No deprecated stdlib modules are used.  `asyncio` calls use `get_running_loop()`
-(not the deprecated `get_event_loop()`).  Tests pass cleanly with
-`-W error::DeprecationWarning` on Python 3.9 and 3.14.
-
-## Optional Backends
-
-| Backend | Install | Status |
-|---------|---------|--------|
-| (none) | built in | Native DICOM Part 10 file read/write (`dicomforge.part10`), including encapsulated fragment framing, plus RLE Lossless compress/decompress (`dicomforge.rle` / `dicomforge.transcode`) |
-| pydicom ≥ 2.4 | `pip install dicomforge[pydicom]` | Conversion, JPEG-family compressed pixel bridge, broadest real-world file coverage |
-| pydicom ≥ 3.0 | same | Supported — uses `pydicom.dcmwrite()` when available |
-| numpy ≥ 1.23 | `pip install dicomforge[pixels]` | Pixel arrays and frame iteration |
-| Pillow ≥ 10 | `pip install dicomforge[pixels]` | `adapt.to_pil_image`, JPEG preview helpers |
-| pynetdicom ≥ 2.0 | `pip install dicomforge[network]` | `adapt.from_pynetdicom_event` bridge |
-
-Install everything at once:
-
-```bash
-pip install dicomforge[all]
-```
-
-## DICOM Capability Status
-
-| Capability | Current Status |
-|------------|-------------|
-| Typed tag normalization (100 keywords) | ✅ Implemented |
-| Transfer syntax classification (14 syntaxes) | ✅ Implemented |
-| Codec capability registry | ✅ Implemented |
-| Specific Character Set helpers | ✅ ASCII, UTF-8, ISO 8859, ISO 2022 IR 87/149, GB18030/GBK |
-| Person Name component parsing | ✅ `dicomforge.charset.PersonName` |
-| Native pixel metadata validation | ✅ Implemented |
-| Pixel array extraction — uncompressed | ✅ via `dicomforge.adapt` (requires numpy) |
-| Pixel array extraction — RLE Lossless | ✅ built-in dependency-free codec (`dicomforge.rle`) |
-| Pixel array extraction — JPEG family | ✅ via pydicom bridge plus codec plugins |
-| Pixel-data compression (RLE Lossless) | ✅ `compress_pixel_data` / `decompress_pixel_data` — no dependencies |
-| Multiframe pixel iteration | ✅ `adapt.iter_pixel_frames` |
-| Color-space conversion | ✅ RGB/YBR display conversion in `to_pil_image` |
-| JPEG preview generation | ✅ `adapt.to_jpeg_preview` / `adapt.from_jpeg_preview` |
-| Native dependency-free file read/write | ✅ `dicomforge.part10` — Implicit/Explicit VR LE, Explicit VR BE, Deflated, plus encapsulated fragment read/write |
-| pydicom-backed read/write | ✅ Implemented (pydicom 2.x + 3.x) |
-| Starter de-identification plan (48 rules) | ✅ Implemented |
-| Full DICOM PS3.15 profile | 🔲 Planned (1.0) |
-| Date-shift de-identification action | ✅ `AnonymizationAction.SHIFT_DATE` |
-| UID validation and generation | ✅ `is_valid_uid` / `generate_uid` (PS3.5 grammar, UUID-derived `2.25` root) |
-| Async command lifecycle (JSON transport) | ✅ Implemented |
-| DICOM Upper Layer wire compatibility | 🔲 Planned (dicomforge-network, 1.0) |
-| DICOMweb query/client/multipart helpers | ✅ Implemented |
-| DICOMweb production transport (auth/retry) | ✅ Implemented |
-| pydicom ↔ DicomDataset conversion | ✅ via `dicomforge.adapt` |
-| Pillow image display helper | ✅ via `dicomforge.adapt` (requires Pillow) |
-| High-level `DicomFile` API | ✅ via `dicomforge.api` |
-| `quick_anonymize` one-liner | ✅ via `dicomforge.api` |
-| Dataset structural validation | ✅ via `dicomforge.api` (`ValidationIssue` structured output available) |
-| Multi-byte character sets (Japanese, Korean, …) | ✅ Explicit helpers plus pydicom write propagation |
-| IOD/module validation | ◐ `validate_for_sop_class` covers five common image SOP Classes; full module tables planned (1.0) |
-
-## Commercial Adoption Readiness
-
-The table below summarises which workflow patterns are ready for use in
-production software today and which require additional validation or a
-planned milestone before they are suitable.
-
-| Workflow | Ready today? | Notes |
-|----------|:------------:|-------|
-| Read/write uncompressed DICOM files with no dependencies | ✅ | `dcmread` / `dcmwrite`, native backend |
-| Research de-identification (non-pixel) | ✅ | Pair with pixel review and governance policy |
-| DICOM metadata extraction and inspection | ✅ | `DicomFile`, `DicomDataset`, pydicom adapter |
-| DICOMweb QIDO/WADO/STOW integration | ✅ | Inject auth/retry in your `DicomwebTransport` |
-| DICOM JSON round-trip | ✅ | `adapt.to_json` / `adapt.from_json` |
-| Uncompressed pixel array extraction | ✅ | `adapt.pixel_array` (requires numpy) |
-| Display-ready image from DICOM | ✅ | `adapt.to_pil_image` (numpy + Pillow) |
-| JPEG thumbnails/API previews | ✅ | `adapt.to_jpeg_preview`; lossy 8-bit previews only |
-| RLE Lossless compress/decompress | ✅ | Built in, no dependencies; bit-exact pydicom interop |
-| JPEG-family compressed pixel decode | ⚠️ | Requires pydicom plus a codec plugin |
-| Wire-compatible DIMSE | ❌ | Planned `dicomforge-network`; use `pynetdicom` now |
-| Regulated clinical workflows | ⚠️ | Not a medical device; site validation required |
-| Multi-byte patient names (Japanese, …) | ✅ | Explicit helpers; validate real site fixtures before regulated use |
+See [migration](migration-0.12.md), [conformance](conformance.md), and
+[release verification](release-verification-0.12.md) for changes and measured results.

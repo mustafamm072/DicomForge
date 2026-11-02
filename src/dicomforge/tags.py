@@ -177,6 +177,14 @@ class Tag:
             keyword = cls._KEYWORDS.get(normalized)
             if keyword is not None:
                 return keyword
+            if normalized.isidentifier():
+                from dicomforge.dictionary import standard_dictionary
+
+                for encoded, entry in standard_dictionary().items():
+                    if entry[1] == normalized:
+                        parsed = cls(int(encoded[:4], 16), int(encoded[4:], 16))
+                        cls._KEYWORDS[normalized] = parsed
+                        return parsed
             if normalized.startswith("(") and normalized.endswith(")"):
                 normalized = normalized[1:-1]
             normalized = normalized.replace(" ", "")

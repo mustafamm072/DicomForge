@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import re
-import threading
-from dataclasses import dataclass
+import hmac
+from dataclasses import dataclass, field
 from datetime import date as _date
 from datetime import timedelta as _timedelta
 from enum import Enum
@@ -13,6 +12,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from dicomforge.dataset import DicomDataset
 from dicomforge.tags import Tag, TagInput
+from dicomforge.uids import is_valid_uid
 
 
 class AnonymizationAction(str, Enum):
@@ -33,7 +33,7 @@ class PrivateTagAction(str, Enum):
 class Rule:
     tag: Tag
     action: AnonymizationAction
-    replacement: object = ""
+    replacement: object = field(default="", repr=False)
 
 
 @dataclass(frozen=True)
@@ -44,22 +44,25 @@ class AnonymizationEvent:
     action: AnonymizationAction
     before_present: bool
     after_present: bool
-    replacement: object = ""
+    replacement: object = field(default=None, repr=False)
     path: Tuple[Tag, ...] = ()
-    previous_value: object = None
-    new_value: object = None
+    previous_value: object = field(default=None, repr=False)
+    new_value: object = field(default=None, repr=False)
+    item_path: Tuple[object, ...] = ()
 
-    def to_dict(self) -> dict[str, object]:
-        return {
+    def to_dict(self, *, include_values: bool = False) -> dict[str, object]:
+        result: dict[str, object] = {
             "tag": str(self.tag),
             "action": self.action.value,
             "before_present": self.before_present,
             "after_present": self.after_present,
-            "replacement": self.replacement,
             "path": [str(tag) for tag in self.path],
-            "previous_value": self.previous_value,
-            "new_value": self.new_value,
+            "item_path": [str(item) if isinstance(item, Tag) else item for item in self.item_path],
         }
+        if include_values:
+            result.update(replacement=self.replacement, previous_value=self.previous_value,
+                          new_value=self.new_value)
+        return result
 
 
 @dataclass(frozen=True)
@@ -70,9 +73,9 @@ class AnonymizationReport:
     private_tags_removed: int
     private_tag_action: PrivateTagAction = PrivateTagAction.REMOVE
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, *, include_values: bool = False) -> dict[str, object]:
         return {
-            "events": [event.to_dict() for event in self.events],
+            "events": [event.to_dict(include_values=include_values) for event in self.events],
             "private_tags_removed": self.private_tags_removed,
             "private_tag_action": self.private_tag_action.value,
         }
@@ -85,32 +88,31 @@ AuditReport = AnonymizationReport
 class UidRemapper:
     """Deterministically replace UIDs while preserving equality relationships."""
 
-    def __init__(self, root: str = "2.25", *, salt: str = "dicomforge") -> None:
+    def __init__(
+        self, root: str = "2.25", *, salt: str = "dicomforge",
+        key: Optional[bytes] = None, namespace: str = "",
+    ) -> None:
         normalized_root = root.strip().rstrip(".")
-        if not _UID_ROOT_PATTERN.match(normalized_root) or len(normalized_root) > 60:
+        if not is_valid_uid(normalized_root) or len(normalized_root) > 24:
             raise ValueError(
                 "UID root must contain numeric components separated by dots and leave room "
-                "for a generated suffix."
+                "for a full 128-bit suffix (root length at most 24)."
             )
         self.root = normalized_root
         self.salt = salt
-        self._cache: Dict[str, str] = {}
-        self._lock = threading.Lock()
+        self._key = key if key is not None else salt.encode("utf-8")
+        if not self._key:
+            raise ValueError("UID mapping key cannot be empty")
+        self._namespace = namespace.encode("utf-8")
+        self.strategy = "hmac-sha256-v1"
 
     def remap(self, uid: object) -> str:
         original = str(uid).strip()
         if not original:
             return ""
-        with self._lock:
-            cached = self._cache.get(original)
-            if cached is not None:
-                return cached
-            digest = sha256(f"{self.salt}\0{original}".encode("utf-8")).digest()
-            suffix = str(int.from_bytes(digest[:16], "big"))
-            available = 64 - len(self.root) - 1
-            remapped = f"{self.root}.{suffix[:available]}"
-            self._cache[original] = remapped
-            return remapped
+        digest = hmac.new(self._key, b"dicomforge-uid-v1\0" + self._namespace + b"\0"
+                          + original.encode("utf-8"), sha256).digest()
+        return f"{self.root}.{int.from_bytes(digest[:16], 'big')}"
 
 
 _UID_TAGS = (
@@ -184,9 +186,6 @@ _ALWAYS_SET_TAGS = frozenset(
     }
 )
 
-_UID_ROOT_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+)*$")
-
-
 class AnonymizationPlan:
     """A deterministic de-identification plan that can be audited before use.
 
@@ -229,7 +228,8 @@ class AnonymizationPlan:
             Tag.parse(tag): value for tag, value in (replacements or {}).items()
         }
         rules = [
-            Rule(rule.tag, rule.action, replacement_map.get(rule.tag, rule.replacement))
+            Rule(rule.tag, AnonymizationAction.REPLACE if rule.tag in replacement_map
+                 else rule.action, replacement_map.get(rule.tag, rule.replacement))
             for rule in _BASIC_PROFILE_RULES
         ]
         rules.extend(Rule(tag, AnonymizationAction.REMAP_UID) for tag in _UID_TAGS)
@@ -277,9 +277,11 @@ class AnonymizationPlan:
         *,
         remove_private_tags: Optional[bool] = None,
         recursive: bool = True,
+        capture_values: bool = False,
     ) -> AnonymizationReport:
         events: List[AnonymizationEvent] = []
-        self._apply_to_dataset(dataset, events, path=(), recursive=recursive)
+        self._apply_to_dataset(dataset, events, path=(), recursive=recursive,
+                               capture_values=capture_values, item_path=())
         should_remove_private = (
             remove_private_tags
             if remove_private_tags is not None
@@ -303,6 +305,8 @@ class AnonymizationPlan:
         *,
         path: Tuple[Tag, ...],
         recursive: bool,
+        capture_values: bool = False,
+        item_path: Tuple[object, ...] = (),
     ) -> None:
         for rule in self._rules:
             before_present = rule.tag in dataset
@@ -314,7 +318,7 @@ class AnonymizationPlan:
                 if before_present:
                     dataset.set(rule.tag, "")
             elif rule.action == AnonymizationAction.REPLACE:
-                if before_present or rule.tag in _ALWAYS_SET_TAGS:
+                if before_present or (not path and rule.tag in _ALWAYS_SET_TAGS):
                     dataset.set(rule.tag, rule.replacement)
             elif rule.action == AnonymizationAction.REMAP_UID:
                 if before_present:
@@ -334,20 +338,24 @@ class AnonymizationPlan:
                     action=rule.action,
                     before_present=before_present,
                     after_present=rule.tag in dataset,
-                    replacement=self._audit_replacement(rule, dataset),
+                    replacement=self._audit_replacement(rule, dataset) if capture_values else None,
                     path=path,
-                    previous_value=previous_value,
-                    new_value=dataset.get(rule.tag),
+                    previous_value=previous_value if capture_values else None,
+                    new_value=dataset.get(rule.tag) if capture_values else None,
+                    item_path=item_path + (rule.tag,),
                 )
             )
         if recursive:
             for tag, value in list(dataset.items()):
-                for child in _iter_sequence_items(value):
-                    self._apply_to_dataset(child, events, path=path + (tag,), recursive=True)
+                for index, child in enumerate(_iter_sequence_items(value)):
+                    self._apply_to_dataset(child, events, path=path + (tag,), recursive=True,
+                                           capture_values=capture_values,
+                                           item_path=item_path + (tag, index))
 
-    def audit(self) -> list[dict[str, object]]:
+    def audit(self, *, include_values: bool = False) -> list[dict[str, object]]:
         return [
-            {"tag": str(rule.tag), "action": rule.action.value, "replacement": rule.replacement}
+            {"tag": str(rule.tag), "action": rule.action.value,
+             **({"replacement": rule.replacement} if include_values else {})}
             for rule in self._rules
         ]
 
@@ -369,7 +377,7 @@ class AnonymizationPlan:
 def _iter_sequence_items(value: object) -> Iterable[DicomDataset]:
     if isinstance(value, DicomDataset):
         yield value
-    elif isinstance(value, list):
+    elif isinstance(value, (list, tuple)):
         for item in value:
             if isinstance(item, DicomDataset):
                 yield item
@@ -384,7 +392,8 @@ def _shift_date_value(value: Any, offset_days: int) -> Any:
     * **DT** (DateTime) — starts with ``YYYYMMDD``; any trailing time
       component (``HHmmSS.FFFFFF±HHMM``) is preserved verbatim.
 
-    If *value* is not a string, is empty, shorter than 8 characters, or
+    Lists and tuples are shifted element by element, preserving their shape.
+    If a scalar *value* is not a string, is empty, shorter than 8 characters, or
     does not begin with a valid calendar date, it is returned unchanged
     rather than raising — partial or missing dates should not crash a
     de-identification run.
@@ -396,6 +405,10 @@ def _shift_date_value(value: Any, offset_days: int) -> Any:
     offset_days:
         Number of days to add (positive = future, negative = past).
     """
+    if isinstance(value, list):
+        return [_shift_date_value(item, offset_days) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_shift_date_value(item, offset_days) for item in value)
     if not isinstance(value, str) or len(value) < 8:
         return value
     date_part = value[:8]
